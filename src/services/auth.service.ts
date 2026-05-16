@@ -150,8 +150,8 @@ export async function login(credentials: LoginCredentials): Promise<LoginResult>
     }
 
     // 2. Thử đăng nhập qua Supabase Auth
-    // Supabase Auth sử dụng email-based login, ta dùng phone@store.local format
-    const email = `${phone}@store.local`
+    // Nếu input có @ → dùng trực tiếp, nếu không → thêm @store.local
+    const email = phone.includes('@') ? phone : `${phone}@store.local`
 
     const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,

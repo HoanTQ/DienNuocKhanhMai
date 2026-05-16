@@ -77,7 +77,7 @@ export default function DashboardLayout({
         {/* Sidebar Header */}
         <div className="flex items-center h-16 px-6 border-b">
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-lg font-bold text-primary">⚡ Điện Nước</span>
+            <span className="text-lg font-bold text-primary whitespace-nowrap">⚡ Khánh Mai</span>
           </Link>
         </div>
 
@@ -127,7 +127,7 @@ export default function DashboardLayout({
         {/* Mobile Top Header */}
         <header className="lg:hidden flex items-center justify-between h-14 px-4 bg-white border-b sticky top-0 z-20">
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-base font-bold text-primary">⚡ Điện Nước</span>
+            <span className="text-base font-bold text-primary whitespace-nowrap">⚡ Khánh Mai</span>
           </Link>
           <NotificationBell />
         </header>

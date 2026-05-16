@@ -53,8 +53,10 @@ export function NotificationBell({ className }: NotificationBellProps) {
   useEffect(() => {
     if (!userId) return;
 
+    // Tạo unique channel name mỗi lần mount để tránh conflict với Strict Mode
+    const channelName = `notifications-bell-${userId}-${Date.now()}`;
     const channel = supabase
-      .channel('notifications-bell')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -64,16 +66,16 @@ export function NotificationBell({ className }: NotificationBellProps) {
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          // Refresh count on any notification change
           refreshCount();
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      channel.unsubscribe();
     };
-  }, [userId, supabase, refreshCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, supabase]);
 
   const handleClick = () => {
     router.push('/notifications');

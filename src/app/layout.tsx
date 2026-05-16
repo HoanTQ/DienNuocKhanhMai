@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Quản lý Cửa hàng Điện Nước',
-  description: 'Hệ thống quản lý cửa hàng điện nước - Tồn kho, Bán hàng, Công nợ',
+  title: 'Điện nước Khánh Mai',
+  description: 'Hệ thống quản lý cửa hàng điện nước Khánh Mai',
 };
 
 export default function RootLayout({

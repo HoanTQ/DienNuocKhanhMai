@@ -68,18 +68,17 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Phone Number */}
+          {/* Tài khoản */}
           <div className="space-y-2">
-            <Label htmlFor="phone">Số điện thoại</Label>
+            <Label htmlFor="phone">Tài khoản</Label>
             <Input
               id="phone"
-              type="tel"
-              placeholder="0901234567"
+              type="text"
+              placeholder="Nhập ID hoặc email"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               required
-              autoComplete="tel"
-              inputMode="tel"
+              autoComplete="username"
               disabled={isLoading}
               aria-describedby={error ? 'login-error' : undefined}
             />
