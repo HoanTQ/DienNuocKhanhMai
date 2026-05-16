@@ -46,6 +46,13 @@ function matchesRoute(pathname: string, routes: string[]): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // Redirect root path to /pos
+  if (pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/pos'
+    return NextResponse.redirect(url)
+  }
+
   // Bỏ qua routes công khai
   if (matchesRoute(pathname, PUBLIC_ROUTES)) {
     const { response } = await updateSession(request)
