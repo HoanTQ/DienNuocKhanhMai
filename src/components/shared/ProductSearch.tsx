@@ -200,7 +200,7 @@ export function ProductSearch({
   };
 
   return (
-    <div className="w-full max-w-lg mx-auto">
+    <div className="w-full relative">
       {/* Search input + barcode button */}
       <div className="flex gap-2">
         <div className="relative flex-1">
@@ -274,10 +274,10 @@ export function ProductSearch({
         </div>
       )}
 
-      {/* Search results */}
+      {/* Search results - OVERLAY dropdown, max 4 items visible, auto-close on select */}
       {results.length > 0 && (
         <ul
-          className="mt-3 space-y-2 max-h-[60vh] overflow-y-auto"
+          className="absolute top-full left-0 right-0 mt-2 bg-white border border-border rounded-lg shadow-lg max-h-[220px] overflow-y-auto z-50"
           role="listbox"
           aria-label="Kết quả tìm kiếm sản phẩm"
         >
@@ -285,28 +285,32 @@ export function ProductSearch({
             <li key={product.id} role="option" aria-selected={false}>
               <button
                 type="button"
-                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-primary hover:bg-primary/5 active:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => onSelectProduct?.(product)}
+                className="w-full text-left p-3 hover:bg-accent active:bg-accent/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring border-b border-border last:border-b-0 cursor-pointer"
+                onClick={() => {
+                  onSelectProduct?.(product);
+                  setQuery('');
+                  setResults([]);
+                }}
                 aria-label={`Chọn ${product.name} - ${product.specification}`}
               >
                 {/* Tên sản phẩm + thương hiệu */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-base font-medium text-foreground truncate">
+                    <p className="text-sm font-medium text-foreground truncate">
                       {product.name}
                     </p>
-                    <p className="text-sm text-muted-foreground mt-0.5">
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       {product.brand} · {product.specification}
                     </p>
                   </div>
                   {/* Giá bán */}
-                  <span className="text-base font-semibold text-primary whitespace-nowrap">
+                  <span className="text-sm font-semibold font-mono text-success whitespace-nowrap">
                     {formatPrice(product.selling_price)}
                   </span>
                 </div>
 
                 {/* Đơn vị tính + Tồn kho */}
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-2 mt-1.5">
                   <Badge variant="secondary" className="text-xs">
                     {product.base_unit}
                   </Badge>
@@ -329,7 +333,7 @@ export function ProductSearch({
 
       {/* Empty state */}
       {!isLoading && query.trim() && results.length === 0 && !error && (
-        <div className="mt-3 p-4 text-center text-muted-foreground">
+        <div className="absolute top-full left-0 right-0 mt-2 p-4 text-center text-muted-foreground bg-white border border-border rounded-lg shadow-lg z-50">
           <p className="text-sm">Không tìm thấy sản phẩm phù hợp.</p>
         </div>
       )}

@@ -4,48 +4,31 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* Design System: Hệ thống Quản lý Cửa hàng Điện Nước */
+    --background: 210 40% 98%; /* slate-50 #F8FAFC */
+    --foreground: 215 25% 17%; /* slate-800 #1E293B */
+    --card: 0 0% 100%; /* white */
+    --card-foreground: 215 25% 17%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --popover-foreground: 215 25% 17%;
+    --primary: 217 91% 60%; /* blue-600 #2563EB */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 192 91% 36%; /* cyan-600 #0891B2 */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 40% 96%; /* slate-100 */
+    --muted-foreground: 215 16% 47%; /* slate-500 #64748B */
+    --accent: 214 95% 93%; /* blue-100 #DBEAFE */
+    --accent-foreground: 217 91% 60%;
+    --destructive: 0 72% 51%; /* red-600 #DC2626 */
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%; /* green-600 #16A34A */
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 44%; /* amber-600 #D97706 */
+    --warning-foreground: 0 0% 100%;
+    --border: 214 32% 91%; /* slate-200 #E2E8F0 */
+    --input: 214 32% 91%;
+    --ring: 217 91% 60%;
     --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
   }
 }
 
@@ -55,19 +38,64 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Mobile-first: font size đủ lớn cho mobile (Requirement 5.3) */
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-size: 16px;
     line-height: 1.5;
     -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Safe area for mobile bottom navigation (devices with notch/home indicator) */
-.safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+/* Utility classes */
+@layer utilities {
+  /* Monospace font for prices and numbers */
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  /* Safe area for mobile bottom navigation */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Price formatting */
+  .text-price {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-weight: 600;
+    color: hsl(var(--success));
+  }
+
+  .text-price-lg {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: hsl(var(--foreground));
+  }
+
+  /* KPI value styling */
+  .text-kpi {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  /* Skeleton loading animation */
+  .skeleton {
+    background: linear-gradient(90deg, hsl(210 40% 96%) 25%, hsl(214 32% 91%) 50%, hsl(210 40% 96%) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
 }
 
-/* Print-friendly styles for Quotation (Báo giá) - Requirement 20.2 */
+/* Print styles for Quotation (Báo giá) */
 @media print {
   body {
     font-size: 12px;
@@ -75,31 +103,21 @@
     color: black !important;
   }
 
-  /* Ẩn sidebar, header, navigation khi in */
-  nav,
-  aside,
-  header,
-  .print\\:hidden {
+  nav, aside, header, .print\:hidden {
     display: none !important;
   }
 
-  /* Hiện các phần tử chỉ dành cho in */
-  .print\\:block {
+  .print\:block {
     display: block !important;
   }
 
-  .print\\:inline {
-    display: inline !important;
-  }
-
-  /* Đảm bảo bảng báo giá hiển thị đẹp khi in */
   table {
     width: 100%;
     border-collapse: collapse;
+    page-break-inside: avoid;
   }
 
-  table th,
-  table td {
+  table th, table td {
     border: 1px solid #ddd;
     padding: 6px 8px;
   }
@@ -110,14 +128,23 @@
     print-color-adjust: exact;
   }
 
-  /* Không cắt trang giữa bảng */
-  table {
-    page-break-inside: avoid;
-  }
-
-  /* Card không có shadow khi in */
   [class*="card"] {
     box-shadow: none !important;
     border: none !important;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .skeleton {
+    animation: none;
+    background: hsl(210 40% 96%);
   }
 }

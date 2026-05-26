@@ -8,15 +8,18 @@ const config: Config = {
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    // Mobile-first breakpoints (Requirement 5.1, 5.2)
     screens: {
-      sm: '640px',   // Tablet nhỏ
-      md: '768px',   // Tablet
-      lg: '1024px',  // Desktop nhỏ
-      xl: '1280px',  // Desktop
-      '2xl': '1536px', // Desktop lớn
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1536px',
     },
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -34,6 +37,14 @@ const config: Config = {
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
+        },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
         },
         muted: {
           DEFAULT: 'hsl(var(--muted))',
@@ -58,15 +69,21 @@ const config: Config = {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontSize: {
-        // Kích thước font đủ lớn cho mobile (Requirement 5.3)
-        'mobile-base': ['16px', '24px'],
-        'mobile-lg': ['18px', '28px'],
-        'mobile-xl': ['20px', '30px'],
+        'price': ['1.125rem', { lineHeight: '1.5', fontWeight: '600' }],
+        'price-lg': ['1.5rem', { lineHeight: '1.3', fontWeight: '700' }],
+        'kpi': ['1.5rem', { lineHeight: '1.2', fontWeight: '700' }],
       },
       spacing: {
-        // Touch-friendly spacing cho mobile (Requirement 5.3, 5.4)
-        'touch': '44px', // Minimum touch target size
-        'touch-lg': '48px',
+        'touch': '48px',
+        'touch-sm': '44px',
+      },
+      minHeight: {
+        'touch': '48px',
+        'touch-sm': '44px',
+      },
+      minWidth: {
+        'touch': '48px',
+        'touch-sm': '44px',
       },
     },
   },

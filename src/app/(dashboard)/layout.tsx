@@ -2,61 +2,81 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { useState } from 'react';
 import {
   ShoppingCart,
   Package,
-  Users,
-  MoreHorizontal,
+  ScanBarcode,
+  Bell,
+  Menu,
   Home,
+  Users,
   BarChart3,
   Truck,
   CreditCard,
   ClipboardList,
   Settings,
   RotateCcw,
-  Bell,
+  FileText,
+  LogOut,
+  ChevronLeft,
+  Building2,
+  X,
 } from 'lucide-react';
 import { NotificationBell } from '@/components/shared/NotificationBell';
 import { cn } from '@/lib/utils';
 
 /**
- * Dashboard Layout - Responsive navigation
+ * Dashboard Layout — Redesigned per Design System MASTER.md
  *
- * Mobile: Bottom navigation bar (4 tabs + More)
- * Desktop: Sidebar navigation + top header
+ * Desktop (≥1024px): Collapsible sidebar + top navbar
+ * Tablet/Mobile (<1024px): Top navbar + bottom tab bar
  *
- * Đảm bảo:
- * - Nút bấm tối thiểu 44px touch target (Requirement 5.3)
- * - Font chữ đủ lớn trên mobile (Requirement 5.3)
- * - Luồng thao tác ngắn gọn (Requirement 22.1)
- *
- * Validates: Requirements 5.3, 22.1
+ * Bottom tabs (mobile):
+ * - Chủ cửa hàng: Bán hàng | Tồn kho | Tra giá | Thông báo | Menu
+ * - Nhân viên: Bán hàng | Tồn kho | Tra giá | Báo giá | Menu
  */
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  mobileNav?: boolean;
+  section?: string;
 }
 
 const navItems: NavItem[] = [
-  { href: '/', label: 'Trang chủ', icon: Home, mobileNav: true },
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, mobileNav: true },
-  { href: '/inventory', label: 'Tồn kho', icon: Package, mobileNav: true },
-  { href: '/customers', label: 'Khách hàng', icon: Users, mobileNav: true },
-  { href: '/products', label: 'Sản phẩm', icon: ClipboardList },
-  { href: '/debts', label: 'Công nợ', icon: CreditCard },
-  { href: '/purchasing/orders', label: 'Đặt hàng', icon: Truck },
-  { href: '/purchasing/receipts', label: 'Nhập kho', icon: Package },
-  { href: '/returns', label: 'Trả hàng', icon: RotateCcw },
-  { href: '/delivery', label: 'Giao hàng', icon: Truck },
-  { href: '/reports', label: 'Báo cáo', icon: BarChart3 },
-  { href: '/notifications', label: 'Thông báo', icon: Bell },
-  { href: '/settings', label: 'Cài đặt', icon: Settings },
+  { href: '/', label: 'Tổng quan', icon: Home, section: 'main' },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'main' },
+  { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'main' },
+  { href: '/products', label: 'Sản phẩm', icon: ClipboardList, section: 'main' },
+  { href: '/customers', label: 'Khách hàng', icon: Users, section: 'main' },
+  { href: '/debts', label: 'Công nợ', icon: CreditCard, section: 'finance' },
+  { href: '/purchasing/orders', label: 'Đặt hàng', icon: Truck, section: 'finance' },
+  { href: '/purchasing/receipts', label: 'Nhập kho', icon: Package, section: 'finance' },
+  { href: '/purchasing/suppliers', label: 'Nhà cung cấp', icon: Building2, section: 'finance' },
+  { href: '/returns', label: 'Trả hàng', icon: RotateCcw, section: 'operations' },
+  { href: '/delivery', label: 'Giao hàng', icon: Truck, section: 'operations' },
+  { href: '/reports', label: 'Báo cáo', icon: BarChart3, section: 'operations' },
+  { href: '/reports/quotation', label: 'Báo giá', icon: FileText, section: 'operations' },
+  { href: '/notifications', label: 'Thông báo', icon: Bell, section: 'system' },
+  { href: '/audit-log', label: 'Nhật ký', icon: ClipboardList, section: 'system' },
+  { href: '/settings', label: 'Cài đặt', icon: Settings, section: 'system' },
 ];
 
-const mobileNavItems = navItems.filter((item) => item.mobileNav);
+// Bottom tab items for mobile
+const mobileTabItems: NavItem[] = [
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart },
+  { href: '/inventory', label: 'Tồn kho', icon: Package },
+  { href: '/products', label: 'Tra giá', icon: ScanBarcode },
+  { href: '/notifications', label: 'Thông báo', icon: Bell },
+];
+
+const sectionLabels: Record<string, string> = {
+  main: 'Chính',
+  finance: 'Tài chính',
+  operations: 'Vận hành',
+  system: 'Hệ thống',
+};
 
 export default function DashboardLayout({
   children,
@@ -64,72 +84,132 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
     return pathname.startsWith(href);
   };
 
+  const currentPageLabel = navItems.find((item) => isActive(item.href))?.label || 'Tổng quan';
+
+  // Group nav items by section
+  const sections = ['main', 'finance', 'operations', 'system'];
+
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r z-30">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-background">
+      {/* === Desktop Sidebar === */}
+      <aside
+        className={cn(
+          'hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 bg-white border-r border-border z-30 transition-all duration-200',
+          sidebarCollapsed ? 'lg:w-16' : 'lg:w-64'
+        )}
+      >
         {/* Sidebar Header */}
-        <div className="flex items-center h-16 px-6 border-b">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-lg font-bold text-primary whitespace-nowrap">⚡ Khánh Mai</span>
-          </Link>
+        <div className="flex items-center justify-between h-16 px-4 border-b border-border">
+          {!sidebarCollapsed && (
+            <Link href="/" className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-sm">KM</span>
+              </div>
+              <span className="text-sm font-bold text-foreground truncate">Khánh Mai</span>
+            </Link>
+          )}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-2 rounded-lg hover:bg-muted transition-colors min-w-touch-sm min-h-touch-sm flex items-center justify-center cursor-pointer"
+            aria-label={sidebarCollapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+          >
+            <ChevronLeft className={cn('h-4 w-4 transition-transform', sidebarCollapsed && 'rotate-180')} />
+          </button>
         </div>
 
         {/* Sidebar Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3" aria-label="Điều hướng chính">
-          <ul className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.href);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                      'min-h-[44px]', // Touch-friendly minimum height
-                      active
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                    )}
-                    aria-current={active ? 'page' : undefined}
-                  >
-                    <Icon className="h-5 w-5 flex-shrink-0" />
-                    <span>{item.label}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+        <nav className="flex-1 overflow-y-auto py-3 px-2" aria-label="Điều hướng chính">
+          {sections.map((section) => {
+            const sectionItems = navItems.filter((item) => item.section === section);
+            if (sectionItems.length === 0) return null;
+            return (
+              <div key={section} className="mb-4">
+                {!sidebarCollapsed && (
+                  <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {sectionLabels[section]}
+                  </p>
+                )}
+                <ul className="space-y-0.5">
+                  {sectionItems.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.href);
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg text-sm font-medium transition-colors cursor-pointer',
+                            'min-h-touch-sm',
+                            sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5',
+                            active
+                              ? 'bg-accent text-primary'
+                              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                          )}
+                          aria-current={active ? 'page' : undefined}
+                          title={sidebarCollapsed ? item.label : undefined}
+                        >
+                          <Icon className="h-5 w-5 flex-shrink-0" />
+                          {!sidebarCollapsed && <span>{item.label}</span>}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
+
+        {/* Sidebar Footer */}
+        {!sidebarCollapsed && (
+          <div className="p-3 border-t border-border">
+            <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer min-h-touch-sm">
+              <LogOut className="h-5 w-5" />
+              <span>Đăng xuất</span>
+            </button>
+          </div>
+        )}
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
+      {/* === Main Content Area === */}
+      <div className={cn(
+        'flex-1 flex flex-col min-h-screen transition-all duration-200',
+        sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
+      )}>
         {/* Desktop Top Header */}
-        <header className="hidden lg:flex items-center justify-between h-16 px-6 bg-white border-b sticky top-0 z-20">
-          <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-foreground">
-              {navItems.find((item) => isActive(item.href))?.label || 'Trang chủ'}
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
+        <header className="hidden lg:flex items-center justify-between h-16 px-6 bg-white border-b border-border sticky top-0 z-20">
+          <h1 className="text-lg font-semibold text-foreground">{currentPageLabel}</h1>
+          <div className="flex items-center gap-3">
             <NotificationBell />
           </div>
         </header>
 
         {/* Mobile Top Header */}
-        <header className="lg:hidden flex items-center justify-between h-14 px-4 bg-white border-b sticky top-0 z-20">
+        <header className="lg:hidden flex items-center justify-between h-14 px-4 bg-white border-b border-border sticky top-0 z-20">
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-base font-bold text-primary whitespace-nowrap">⚡ Khánh Mai</span>
+            <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
+              <span className="text-white font-bold text-xs">KM</span>
+            </div>
+            <span className="text-sm font-bold text-foreground">Khánh Mai</span>
           </Link>
-          <NotificationBell />
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="p-2 rounded-lg hover:bg-muted transition-colors min-w-touch min-h-touch flex items-center justify-center cursor-pointer"
+              aria-label="Mở menu"
+            >
+              <Menu className="h-5 w-5 text-foreground" />
+            </button>
+          </div>
         </header>
 
         {/* Page Content */}
@@ -138,13 +218,13 @@ export default function DashboardLayout({
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation */}
+      {/* === Mobile Bottom Tab Bar === */}
       <nav
-        className="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t z-30 safe-area-bottom"
+        className="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t border-border z-30 safe-area-bottom"
         aria-label="Điều hướng nhanh"
       >
         <ul className="flex items-center justify-around h-16">
-          {mobileNavItems.map((item) => {
+          {mobileTabItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -152,40 +232,107 @@ export default function DashboardLayout({
                 <Link
                   href={item.href}
                   className={cn(
-                    'flex flex-col items-center justify-center gap-0.5 py-2 min-h-[48px] transition-colors',
-                    active
-                      ? 'text-primary'
-                      : 'text-muted-foreground'
+                    'flex flex-col items-center justify-center gap-0.5 min-h-touch transition-colors cursor-pointer',
+                    active ? 'text-primary' : 'text-muted-foreground'
                   )}
                   aria-current={active ? 'page' : undefined}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-[10px] font-medium leading-tight">
-                    {item.label}
-                  </span>
+                  <Icon className={cn('h-5 w-5', active && 'stroke-[2.5]')} />
+                  <span className="text-[10px] font-medium leading-tight">{item.label}</span>
                 </Link>
               </li>
             );
           })}
-          {/* More button */}
+          {/* Menu tab */}
           <li className="flex-1">
-            <Link
-              href="/reports"
+            <button
+              onClick={() => setMobileMenuOpen(true)}
               className={cn(
-                'flex flex-col items-center justify-center gap-0.5 py-2 min-h-[48px] transition-colors',
-                pathname.startsWith('/reports') ||
-                  pathname.startsWith('/debts') ||
-                  pathname.startsWith('/settings')
-                  ? 'text-primary'
-                  : 'text-muted-foreground'
+                'flex flex-col items-center justify-center gap-0.5 min-h-touch w-full transition-colors cursor-pointer',
+                mobileMenuOpen ? 'text-primary' : 'text-muted-foreground'
               )}
+              aria-label="Menu"
             >
-              <MoreHorizontal className="h-5 w-5" />
-              <span className="text-[10px] font-medium leading-tight">Thêm</span>
-            </Link>
+              <Menu className="h-5 w-5" />
+              <span className="text-[10px] font-medium leading-tight">Menu</span>
+            </button>
           </li>
         </ul>
       </nav>
+
+      {/* === Mobile Full Menu (Slide-up) === */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-50">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          {/* Menu Panel */}
+          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom duration-250">
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            {/* Close button */}
+            <div className="flex items-center justify-between px-5 pb-3">
+              <h2 className="text-lg font-semibold">Menu</h2>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2 rounded-lg hover:bg-muted min-w-touch-sm min-h-touch-sm flex items-center justify-center cursor-pointer"
+                aria-label="Đóng menu"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {/* Nav items */}
+            <nav className="px-3 pb-8">
+              {sections.map((section) => {
+                const sectionItems = navItems.filter((item) => item.section === section);
+                if (sectionItems.length === 0) return null;
+                return (
+                  <div key={section} className="mb-4">
+                    <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {sectionLabels[section]}
+                    </p>
+                    <ul className="space-y-0.5">
+                      {sectionItems.map((item) => {
+                        const Icon = item.icon;
+                        const active = isActive(item.href);
+                        return (
+                          <li key={item.href}>
+                            <Link
+                              href={item.href}
+                              onClick={() => setMobileMenuOpen(false)}
+                              className={cn(
+                                'flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors cursor-pointer',
+                                'min-h-touch',
+                                active
+                                  ? 'bg-accent text-primary'
+                                  : 'text-foreground hover:bg-muted'
+                              )}
+                            >
+                              <Icon className="h-5 w-5 flex-shrink-0" />
+                              <span>{item.label}</span>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+              {/* Logout */}
+              <div className="mt-4 pt-4 border-t border-border">
+                <button className="flex items-center gap-3 w-full px-3 py-3 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors cursor-pointer min-h-touch">
+                  <LogOut className="h-5 w-5" />
+                  <span>Đăng xuất</span>
+                </button>
+              </div>
+            </nav>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
