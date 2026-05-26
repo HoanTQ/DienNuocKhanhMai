@@ -15,7 +15,7 @@ interface BarcodeScannerProps {
  * Thiết kế mobile-first với video preview và scanning overlay.
  */
 export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProps) {
-  const { startScanning, stopScanning, isScanning, lastScannedCode, error } =
+  const { startScanning, stopScanning, isScanning, lastScannedCode, error, scannerType } =
     useBarcodeScanner();
   const prevCodeRef = useRef<string | null>(null);
 
@@ -115,7 +115,9 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
           aria-hidden="true"
         />
         <span className="text-xs text-gray-600">
-          {isScanning ? 'Đang quét...' : 'Chờ quét'}
+          {isScanning
+            ? `Đang quét${scannerType === 'native' ? ' (Native — nhanh)' : ' (Quagga2)'}`
+            : 'Chờ quét'}
         </span>
       </div>
     </div>

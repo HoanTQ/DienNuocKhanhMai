@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { BarcodeScanner } from '@/components/barcode/BarcodeScanner';
 import {
   productCreateSchema,
   type ProductCreateInput,
@@ -435,18 +436,14 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
           <CardTitle>Thuộc tính tùy chọn</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Mã vạch */}
+          {/* Mã vạch — hỗ trợ quét camera để đăng ký */}
           <div className="space-y-2">
             <Label htmlFor="barcode">Mã vạch</Label>
-            <Input
-              id="barcode"
+            <BarcodeInput
               value={formData.barcode || ''}
-              onChange={(e) => updateField('barcode', e.target.value)}
-              placeholder="Nhập mã vạch sản phẩm"
+              onChange={(value) => updateField('barcode', value)}
+              error={errors.barcode}
             />
-            {errors.barcode && (
-              <p className="text-sm text-destructive">{errors.barcode}</p>
-            )}
           </div>
 
           {/* Hình ảnh */}
@@ -659,5 +656,102 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
         </Button>
       </div>
     </form>
+  );
+}
+
+
+// === Sub-component: BarcodeInput with scan support ===
+
+interface BarcodeInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+}
+
+/**
+ * Input mã vạch với nút quét camera.
+ * Khi quét thành công → tự động fill mã vào input.
+ */
+function BarcodeInput({ value, onChange, error }: BarcodeInputProps) {
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState(false);
+
+  const handleScan = useCallback((barcode: string) => {
+    onChange(barcode);
+    setIsScannerOpen(false);
+    setScanSuccess(true);
+    setTimeout(() => setScanSuccess(false), 3000);
+  }, [onChange]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          id="barcode"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Nhập hoặc quét mã vạch"
+          className="flex-1"
+          aria-invalid={!!error}
+        />
+        <Button
+          type="button"
+          variant={isScannerOpen ? 'default' : 'outline'}
+          onClick={() => setIsScannerOpen(!isScannerOpen)}
+          className="shrink-0 gap-2"
+          aria-label={isScannerOpen ? 'Đóng máy quét' : 'Quét mã vạch'}
+        >
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 8h10M7 12h10M7 16h6"
+            />
+          </svg>
+          <span className="hidden sm:inline">Quét</span>
+        </Button>
+      </div>
+
+      {/* Scanner */}
+      {isScannerOpen && (
+        <div className="border border-border rounded-lg overflow-hidden">
+          <div className="p-2 bg-muted text-xs text-muted-foreground text-center">
+            Hướng camera vào mã vạch sản phẩm
+          </div>
+          <BarcodeScanner
+            isActive={isScannerOpen}
+            onScan={handleScan}
+            onError={() => setIsScannerOpen(false)}
+          />
+          <div className="p-2 flex justify-center">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsScannerOpen(false)}
+            >
+              Đóng camera
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Success feedback */}
+      {scanSuccess && value && (
+        <p className="text-xs text-green-600 font-medium">
+          Đã quét thành công: {value}
+        </p>
+      )}
+
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
+    </div>
   );
 }
