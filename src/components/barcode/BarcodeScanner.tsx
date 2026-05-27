@@ -24,6 +24,7 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
   const detectorRef = useRef<any>(null);
   const frameRef = useRef<number | null>(null);
   const lastCodeRef = useRef<string | null>(null);
+  const emptyFrameCountRef = useRef<number>(0);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
 
@@ -119,6 +120,9 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
             if (barcodes && barcodes.length > 0) {
               const code = barcodes[0].rawValue;
               if (code) {
+                // Reset empty frame counter — mã vạch vẫn visible
+                emptyFrameCountRef.current = 0;
+
                 // Chỉ trigger nếu mã KHÁC với lần quét trước
                 if (code !== lastCodeRef.current) {
                   lastCodeRef.current = code;
@@ -127,9 +131,12 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
                 }
               }
             } else {
-              // Không thấy mã vạch nào trong frame → sản phẩm đã ra khỏi vùng quét
-              // Reset lastCode để cho phép quét lại cùng mã khi đưa sản phẩm mới vào
-              if (lastCodeRef.current !== null) {
+              // Frame trống — đếm số frame liên tiếp không thấy mã
+              emptyFrameCountRef.current++;
+
+              // Chỉ reset sau 30 frame liên tiếp trống (~0.5 giây ở 60fps)
+              // Đảm bảo sản phẩm thật sự đã ra khỏi vùng quét, không phải do blur/lệch tạm thời
+              if (emptyFrameCountRef.current >= 30 && lastCodeRef.current !== null) {
                 lastCodeRef.current = null;
               }
             }
