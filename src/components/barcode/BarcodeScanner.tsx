@@ -110,11 +110,14 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
       await videoRef.current.play();
       setIsScanning(true);
 
-      // Detection loop
+      // Detection loop — chống overlap (đợi detect xong mới gọi frame tiếp)
+      let detecting = false;
+
       const detectLoop = async () => {
         if (!videoRef.current || !detectorRef.current) return;
 
-        if (videoRef.current.readyState >= 2) {
+        if (videoRef.current.readyState >= 2 && !detecting) {
+          detecting = true;
           try {
             const barcodes = await detectorRef.current.detect(videoRef.current);
             if (barcodes && barcodes.length > 0) {
@@ -134,15 +137,16 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
               // Frame trống — đếm số frame liên tiếp không thấy mã
               emptyFrameCountRef.current++;
 
-              // Chỉ reset sau 30 frame liên tiếp trống (~0.5 giây ở 60fps)
+              // Chỉ reset sau 90 frame liên tiếp trống (~1.5 giây ở 60fps)
               // Đảm bảo sản phẩm thật sự đã ra khỏi vùng quét, không phải do blur/lệch tạm thời
-              if (emptyFrameCountRef.current >= 30 && lastCodeRef.current !== null) {
+              if (emptyFrameCountRef.current >= 90 && lastCodeRef.current !== null) {
                 lastCodeRef.current = null;
               }
             }
           } catch {
             // Frame detection error — continue
           }
+          detecting = false;
         }
 
         frameRef.current = requestAnimationFrame(detectLoop);
