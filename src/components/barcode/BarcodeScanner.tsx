@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { useBarcodeScanner } from '@/lib/hooks/useBarcodeScanner';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
@@ -10,56 +9,188 @@ interface BarcodeScannerProps {
 }
 
 /**
- * Component quét mã vạch sử dụng camera thiết bị.
- * Hỗ trợ: EAN-13, CODE-128, UPC-A.
- * Thiết kế mobile-first với video preview và scanning overlay.
+ * Component quét mã vạch sử dụng BarcodeDetector API (native).
+ * Tự quản lý camera + detection loop.
+ * Không dùng hook riêng — tránh race condition với DOM.
  */
 export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProps) {
-  const { startScanning, stopScanning, isScanning, lastScannedCode, error } =
-    useBarcodeScanner();
-  const prevCodeRef = useRef<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastCode, setLastCode] = useState<string | null>(null);
 
-  // Bắt đầu/dừng quét khi isActive thay đổi
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const detectorRef = useRef<any>(null);
+  const frameRef = useRef<number | null>(null);
+  const lastCodeRef = useRef<string | null>(null);
+  const lastTimeRef = useRef<number>(0);
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
+
+  const cleanup = useCallback(() => {
+    if (frameRef.current) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    detectorRef.current = null;
+    setIsScanning(false);
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    setError(null);
+    setLastCode(null);
+    lastCodeRef.current = null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any;
+
+    // Check support
+    if (!('BarcodeDetector' in window)) {
+      setError('Trình duyệt không hỗ trợ BarcodeDetector. Dùng Chrome Android hoặc Safari iOS 16.4+.');
+      onError?.(new Error('BarcodeDetector not supported'));
+      return;
+    }
+
+    try {
+      // Get supported formats
+      const allFormats: string[] = await win.BarcodeDetector.getSupportedFormats();
+      const wanted = ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e'];
+      const formats = wanted.filter((f) => allFormats.includes(f));
+
+      if (formats.length === 0) {
+        setError('Thiết bị không hỗ trợ format mã vạch.');
+        return;
+      }
+
+      // Create detector
+      detectorRef.current = new win.BarcodeDetector({ formats });
+
+      // Get camera
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+      streamRef.current = stream;
+
+      // Try continuous autofocus
+      try {
+        const track = stream.getVideoTracks()[0];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const caps = (track as any).getCapabilities?.();
+        if (caps?.focusMode?.includes('continuous')) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (track as any).applyConstraints({
+            advanced: [{ focusMode: 'continuous' }],
+          });
+        }
+      } catch {
+        // Autofocus not critical
+      }
+
+      // Attach to video element
+      if (!videoRef.current) {
+        cleanup();
+        setError('Video element chưa sẵn sàng. Thử lại.');
+        return;
+      }
+
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      setIsScanning(true);
+
+      // Detection loop
+      const detectLoop = async () => {
+        if (!videoRef.current || !detectorRef.current) return;
+
+        if (videoRef.current.readyState >= 2) {
+          try {
+            const barcodes = await detectorRef.current.detect(videoRef.current);
+            if (barcodes && barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              if (code) {
+                const now = Date.now();
+                if (code !== lastCodeRef.current || now - lastTimeRef.current >= 500) {
+                  lastTimeRef.current = now;
+                  lastCodeRef.current = code;
+                  setLastCode(code);
+                  onScanRef.current(code);
+                }
+              }
+            }
+          } catch {
+            // Frame detection error — continue
+          }
+        }
+
+        frameRef.current = requestAnimationFrame(detectLoop);
+      };
+
+      frameRef.current = requestAnimationFrame(detectLoop);
+    } catch (err) {
+      cleanup();
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('NotAllowed') || msg.includes('Permission')) {
+        setError('Cấp quyền camera: Settings > Site Settings > Camera > Allow');
+      } else if (msg.includes('NotFound')) {
+        setError('Không tìm thấy camera.');
+      } else if (msg.includes('NotReadable') || msg.includes('Abort')) {
+        setError('Camera đang bận. Đóng app camera khác rồi thử lại.');
+      } else {
+        setError('Lỗi: ' + msg);
+      }
+      onError?.(err instanceof Error ? err : new Error(msg));
+    }
+  }, [cleanup, onError]);
+
+  // Start/stop based on isActive prop
   useEffect(() => {
     if (isActive) {
-      startScanning();
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        startCamera();
+      }, 100);
+      return () => {
+        clearTimeout(timer);
+        cleanup();
+      };
     } else {
-      stopScanning();
+      cleanup();
     }
+  }, [isActive, startCamera, cleanup]);
 
-    return () => {
-      stopScanning();
-    };
-  }, [isActive, startScanning, stopScanning]);
-
-  // Gọi onScan khi có mã mới
+  // Cleanup on unmount
   useEffect(() => {
-    if (lastScannedCode && lastScannedCode !== prevCodeRef.current) {
-      prevCodeRef.current = lastScannedCode;
-      onScan(lastScannedCode);
-    }
-  }, [lastScannedCode, onScan]);
-
-  // Gọi onError khi có lỗi
-  useEffect(() => {
-    if (error && onError) {
-      onError(error);
-    }
-  }, [error, onError]);
+    return () => cleanup();
+  }, [cleanup]);
 
   return (
     <div className="relative w-full max-w-md mx-auto">
-      {/* Video viewport */}
-      <div
-        id="barcode-scanner-viewport"
-        className="relative w-full aspect-[4/3] bg-black rounded-lg overflow-hidden"
-      >
+      {/* Video element — camera renders here */}
+      <div className="relative w-full aspect-[4/3] bg-black rounded-lg overflow-hidden">
+        <video
+          ref={videoRef}
+          playsInline
+          autoPlay
+          muted
+          className="w-full h-full object-cover"
+        />
+
         {/* Scanning overlay */}
         {isScanning && (
           <div className="absolute inset-0 pointer-events-none z-10">
-            {/* Scan line animation */}
             <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-red-500 opacity-75 animate-pulse" />
-            {/* Corner markers */}
             <div className="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-green-400" />
             <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-green-400" />
             <div className="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-green-400" />
@@ -67,55 +198,34 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
           </div>
         )}
 
-        {/* Placeholder khi chưa quét */}
-        {!isScanning && !error && (
-          <div className="absolute inset-0 flex items-center justify-center text-white/70">
-            <div className="text-center p-4">
-              <svg
-                className="w-12 h-12 mx-auto mb-2 opacity-50"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 8h10M7 12h10M7 16h6"
-                />
-              </svg>
-              <p className="text-sm">Nhấn để bắt đầu quét mã vạch</p>
-            </div>
+        {/* Loading state */}
+        {!isScanning && !error && isActive && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           </div>
         )}
       </div>
 
-      {/* Error message */}
+      {/* Error */}
       {error && (
-        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
-          <p className="text-sm text-red-700">{error.message}</p>
+        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg" role="alert">
+          <p className="text-sm text-red-700">{error}</p>
         </div>
       )}
 
-      {/* Last scanned code */}
-      {lastScannedCode && (
-        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-          <p className="text-xs text-green-600 font-medium">Mã vạch đã quét:</p>
-          <p className="text-sm text-green-800 font-mono mt-1">{lastScannedCode}</p>
+      {/* Last scanned */}
+      {lastCode && (
+        <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-xs text-green-600 font-medium">Đã quét:</p>
+          <p className="text-sm text-green-800 font-mono font-bold">{lastCode}</p>
         </div>
       )}
 
-      {/* Status indicator */}
+      {/* Status */}
       <div className="mt-2 flex items-center justify-center gap-2">
-        <span
-          className={`inline-block w-2 h-2 rounded-full ${
-            isScanning ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
-          }`}
-          aria-hidden="true"
-        />
+        <span className={`w-2 h-2 rounded-full ${isScanning ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
         <span className="text-xs text-gray-600">
-          {isScanning ? 'Đang quét (Native BarcodeDetector)' : 'Chờ quét'}
+          {isScanning ? 'Đang quét (Native)' : error ? 'Lỗi' : 'Đang khởi tạo...'}
         </span>
       </div>
     </div>
