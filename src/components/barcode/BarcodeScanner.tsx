@@ -24,7 +24,6 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
   const detectorRef = useRef<any>(null);
   const frameRef = useRef<number | null>(null);
   const lastCodeRef = useRef<string | null>(null);
-  const lastTimeRef = useRef<number>(0);
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
 
@@ -120,13 +119,18 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
             if (barcodes && barcodes.length > 0) {
               const code = barcodes[0].rawValue;
               if (code) {
-                const now = Date.now();
-                if (code !== lastCodeRef.current || now - lastTimeRef.current >= 500) {
-                  lastTimeRef.current = now;
+                // Chỉ trigger nếu mã KHÁC với lần quét trước
+                if (code !== lastCodeRef.current) {
                   lastCodeRef.current = code;
                   setLastCode(code);
                   onScanRef.current(code);
                 }
+              }
+            } else {
+              // Không thấy mã vạch nào trong frame → sản phẩm đã ra khỏi vùng quét
+              // Reset lastCode để cho phép quét lại cùng mã khi đưa sản phẩm mới vào
+              if (lastCodeRef.current !== null) {
+                lastCodeRef.current = null;
               }
             }
           } catch {

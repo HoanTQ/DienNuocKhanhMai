@@ -164,29 +164,11 @@ export function ProductSearch({
 
   /**
    * Xử lý thay đổi input với debounce 300ms.
-   * Giảm số lượng request khi người dùng đang gõ.
-   *
-   * Súng bắn mã vạch: gõ toàn bộ mã trong ~50-100ms rồi gửi Enter.
-   * Detect bằng cách theo dõi tốc độ nhập — nếu nhập > 6 ký tự trong < 100ms
-   * → đây là barcode gun → tự động lookup ngay khi nhận Enter.
    */
-  const inputStartTimeRef = useRef<number>(0);
-  const inputLengthRef = useRef<number>(0);
-
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setQuery(value);
-
-      // Track input speed (barcode gun detection)
-      const now = Date.now();
-      if (value.length === 1) {
-        // First character — start timing
-        inputStartTimeRef.current = now;
-        inputLengthRef.current = 1;
-      } else {
-        inputLengthRef.current = value.length;
-      }
 
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -199,7 +181,7 @@ export function ProductSearch({
     [searchProducts]
   );
 
-  /** Xử lý khi nhấn Enter hoặc barcode gun gửi Enter */
+  /** Xử lý khi nhấn Enter (người gõ tay hoặc súng bắn mã vạch gửi Enter) */
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
@@ -211,15 +193,10 @@ export function ProductSearch({
         const trimmed = query.trim();
         if (!trimmed) return;
 
-        // Detect barcode gun: nhiều ký tự nhập rất nhanh (< 150ms cho toàn bộ chuỗi)
-        const elapsed = Date.now() - inputStartTimeRef.current;
-        const isBarcodeGun = inputLengthRef.current >= 6 && elapsed < 150;
-
-        if (isBarcodeGun || /^\d{8,13}$/.test(trimmed)) {
-          // Barcode gun hoặc mã vạch thuần số → lookup trực tiếp + auto-add
+        // Nếu toàn số 8-13 ký tự → mã vạch → lookup trực tiếp + auto-add
+        if (/^\d{8,13}$/.test(trimmed)) {
           lookupByBarcode(trimmed);
         } else {
-          // Người gõ tay bình thường → search
           searchProducts(trimmed);
         }
       }
