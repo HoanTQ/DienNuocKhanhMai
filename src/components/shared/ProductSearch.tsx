@@ -64,8 +64,24 @@ export function ProductSearch({
     setError(null);
 
     try {
+      // Nếu query là số thuần (8-13 ký tự) → có thể là mã vạch, tìm barcode trước
+      const trimmed = searchQuery.trim();
+      if (/^\d{8,13}$/.test(trimmed)) {
+        const { data: barcodeResult } = await supabase.current
+          .from('products')
+          .select('*')
+          .eq('barcode', trimmed)
+          .limit(1);
+
+        if (barcodeResult && barcodeResult.length > 0) {
+          setResults(barcodeResult);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       // Thử full-text search trước (nhanh hơn với index)
-      const ftsQuery = searchQuery.trim().split(/\s+/).join(' & ');
+      const ftsQuery = trimmed.split(/\s+/).join(' & ');
       const { data: ftsResults, error: ftsError } = await supabase.current
         .from('products')
         .select('*')
@@ -78,13 +94,13 @@ export function ProductSearch({
         return;
       }
 
-      // Fallback: ilike search trên name, brand, specification
-      const likePattern = `%${searchQuery.trim()}%`;
+      // Fallback: ilike search trên name, brand, specification, barcode
+      const likePattern = `%${trimmed}%`;
       const { data: likeResults, error: likeError } = await supabase.current
         .from('products')
         .select('*')
         .or(
-          `name.ilike.${likePattern},brand.ilike.${likePattern},specification.ilike.${likePattern}`
+          `name.ilike.${likePattern},brand.ilike.${likePattern},specification.ilike.${likePattern},barcode.ilike.${likePattern}`
         )
         .limit(20);
 
@@ -124,11 +140,13 @@ export function ProductSearch({
         }
 
         if (data && data.length > 0) {
-          setResults(data);
-          // Tự động chọn sản phẩm nếu chỉ có 1 kết quả
+          // Tự động chọn sản phẩm (thêm vào giỏ / tăng quantity)
           if (onSelectProduct) {
             onSelectProduct(data[0]);
           }
+          // Clear results + query (đóng dropdown) nhưng GIỮ camera mở để quét tiếp
+          setResults([]);
+          setQuery('');
         } else {
           setResults([]);
           setError('Không tìm thấy sản phẩm với mã vạch này.');
@@ -138,7 +156,7 @@ export function ProductSearch({
         setResults([]);
       } finally {
         setIsLoading(false);
-        setIsScannerOpen(false);
+        // KHÔNG đóng scanner — giữ camera mở để quét tiếp sản phẩm khác
       }
     },
     [onSelectProduct]
@@ -147,11 +165,28 @@ export function ProductSearch({
   /**
    * Xử lý thay đổi input với debounce 300ms.
    * Giảm số lượng request khi người dùng đang gõ.
+   *
+   * Súng bắn mã vạch: gõ toàn bộ mã trong ~50-100ms rồi gửi Enter.
+   * Detect bằng cách theo dõi tốc độ nhập — nếu nhập > 6 ký tự trong < 100ms
+   * → đây là barcode gun → tự động lookup ngay khi nhận Enter.
    */
+  const inputStartTimeRef = useRef<number>(0);
+  const inputLengthRef = useRef<number>(0);
+
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setQuery(value);
+
+      // Track input speed (barcode gun detection)
+      const now = Date.now();
+      if (value.length === 1) {
+        // First character — start timing
+        inputStartTimeRef.current = now;
+        inputLengthRef.current = 1;
+      } else {
+        inputLengthRef.current = value.length;
+      }
 
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -164,17 +199,32 @@ export function ProductSearch({
     [searchProducts]
   );
 
-  /** Xử lý khi nhấn Enter */
+  /** Xử lý khi nhấn Enter hoặc barcode gun gửi Enter */
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
+        e.preventDefault();
         if (debounceRef.current) {
           clearTimeout(debounceRef.current);
         }
-        searchProducts(query);
+
+        const trimmed = query.trim();
+        if (!trimmed) return;
+
+        // Detect barcode gun: nhiều ký tự nhập rất nhanh (< 150ms cho toàn bộ chuỗi)
+        const elapsed = Date.now() - inputStartTimeRef.current;
+        const isBarcodeGun = inputLengthRef.current >= 6 && elapsed < 150;
+
+        if (isBarcodeGun || /^\d{8,13}$/.test(trimmed)) {
+          // Barcode gun hoặc mã vạch thuần số → lookup trực tiếp + auto-add
+          lookupByBarcode(trimmed);
+        } else {
+          // Người gõ tay bình thường → search
+          searchProducts(trimmed);
+        }
       }
     },
-    [query, searchProducts]
+    [query, searchProducts, lookupByBarcode]
   );
 
   /** Xử lý khi quét mã vạch thành công */
