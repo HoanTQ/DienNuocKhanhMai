@@ -132,7 +132,7 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
 
                 setTimeout(() => {
                   cooldownRef.current = false;
-                }, 1000);
+                }, 2000);
               }
             }
           } catch {
