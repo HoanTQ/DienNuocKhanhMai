@@ -85,10 +85,10 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Phone Input */}
+          {/* Account Input */}
           <div className="space-y-2">
             <label htmlFor="phone" className="block text-sm font-medium text-foreground">
-              Số điện thoại
+              Tài khoản
             </label>
             <input
               id="phone"

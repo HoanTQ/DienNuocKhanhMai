@@ -1,8 +1,9 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
+import { logout } from '@/services/auth.service';
 import {
   ShoppingCart,
   Package,
@@ -84,8 +85,17 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    await logout();
+    router.push('/login');
+    router.refresh();
+  };
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -171,9 +181,13 @@ export default function DashboardLayout({
         {/* Sidebar Footer */}
         {!sidebarCollapsed && (
           <div className="p-3 border-t border-border">
-            <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer min-h-touch-sm">
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer min-h-touch-sm disabled:opacity-50"
+            >
               <LogOut className="h-5 w-5" />
-              <span>Đăng xuất</span>
+              <span>{isLoggingOut ? 'Đang xuất...' : 'Đăng xuất'}</span>
             </button>
           </div>
         )}
@@ -324,9 +338,13 @@ export default function DashboardLayout({
               })}
               {/* Logout */}
               <div className="mt-4 pt-4 border-t border-border">
-                <button className="flex items-center gap-3 w-full px-3 py-3 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors cursor-pointer min-h-touch">
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="flex items-center gap-3 w-full px-3 py-3 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors cursor-pointer min-h-touch disabled:opacity-50"
+                >
                   <LogOut className="h-5 w-5" />
-                  <span>Đăng xuất</span>
+                  <span>{isLoggingOut ? 'Đang xuất...' : 'Đăng xuất'}</span>
                 </button>
               </div>
             </nav>
