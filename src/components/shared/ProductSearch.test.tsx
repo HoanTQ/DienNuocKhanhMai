@@ -38,7 +38,6 @@ vi.mock('@/components/barcode/BarcodeScanner', () => ({
 const mockProduct = {
   id: 'prod-1',
   name: 'Ống nước PVC Bình Minh',
-  category_id: 'cat-1',
   brand: 'Bình Minh',
   specification: 'D21 dày 1.8mm',
   base_unit: 'mét',

@@ -53,7 +53,7 @@ const productArb = (overrides?: Partial<Product>): fc.Arbitrary<Product> =>
     name: overrides?.name !== undefined
       ? fc.constant(overrides.name)
       : fc.string({ minLength: 1, maxLength: 50 }).filter((s) => s.trim().length > 0),
-    category_id: fc.uuid(),
+    category_id: fc.option(fc.uuid(), { nil: undefined }),
     brand: overrides?.brand !== undefined
       ? fc.constant(overrides.brand)
       : fc.string({ minLength: 1, maxLength: 30 }).filter((s) => s.trim().length > 0),

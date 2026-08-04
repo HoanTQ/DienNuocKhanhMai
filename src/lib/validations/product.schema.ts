@@ -3,9 +3,8 @@ import { z } from 'zod';
 /**
  * Zod validation schema cho Product
  *
- * Required fields: name, category_id, brand, specification, base_unit
+ * Required fields: name, brand, specification, base_unit
  * Optional fields: barcode, image_url, description
- * Hỗ trợ phân loại nhóm chính (Điện, Nước, Sơn) và nhóm phụ
  * Hỗ trợ đơn vị quy đổi tối đa 3 cấp
  *
  * Validates: Requirements 6.1, 6.2, 6.3, 6.4
@@ -30,9 +29,6 @@ export const productCreateSchema = z.object({
     .string({ error: 'Tên sản phẩm là bắt buộc' })
     .min(1, 'Tên sản phẩm không được để trống')
     .max(255, 'Tên sản phẩm tối đa 255 ký tự'),
-  category_id: z
-    .string({ error: 'Nhóm hàng là bắt buộc' })
-    .min(1, 'Vui lòng chọn nhóm hàng'),
   brand: z
     .string({ error: 'Thương hiệu là bắt buộc' })
     .min(1, 'Thương hiệu không được để trống')
@@ -91,31 +87,6 @@ export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export const productUpdateSchema = productCreateSchema.partial();
 
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
-
-// === Category Schema ===
-export const categorySchema = z.object({
-  name: z
-    .string({ error: 'Tên nhóm hàng là bắt buộc' })
-    .min(1, 'Tên nhóm hàng không được để trống')
-    .max(100, 'Tên nhóm hàng tối đa 100 ký tự'),
-  parent_id: z.string().optional().or(z.literal('')),
-  description: z
-    .string()
-    .max(500, 'Mô tả tối đa 500 ký tự')
-    .optional()
-    .or(z.literal('')),
-  image_url: z
-    .string()
-    .url('URL hình ảnh không hợp lệ')
-    .optional()
-    .or(z.literal('')),
-});
-
-export type CategoryInput = z.infer<typeof categorySchema>;
-
-// === Nhóm hàng chính (Main Categories) ===
-export const MAIN_CATEGORIES = ['Điện', 'Nước', 'Sơn'] as const;
-export type MainCategory = (typeof MAIN_CATEGORIES)[number];
 
 // === Helper: validate product form data ===
 export function validateProductForm(data: unknown) {

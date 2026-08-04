@@ -7,7 +7,7 @@
 export interface Product {
   id: string;
   name: string;
-  category_id: string;
+  category_id?: string;
   brand: string;
   specification: string;
   base_unit: string;

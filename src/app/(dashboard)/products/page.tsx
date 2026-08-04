@@ -6,23 +6,21 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { Product, Category } from '@/lib/types';
+import type { Product } from '@/lib/types';
 import Link from 'next/link';
 
 /**
  * Trang Danh sách Sản phẩm
  *
- * Hiển thị danh sách sản phẩm với tìm kiếm, lọc theo nhóm hàng.
+ * Hiển thị danh sách sản phẩm với tìm kiếm.
  * Hỗ trợ thêm, sửa sản phẩm.
  *
  * Validates: Requirements 6.1, 6.2, 6.3
  */
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const supabase = useMemo(() => createClient(), []);
@@ -45,26 +43,9 @@ export default function ProductsPage() {
     setLoading(false);
   }, [supabase]);
 
-  /**
-   * Fetch danh sách nhóm hàng
-   */
-  const fetchCategories = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('name', { ascending: true });
-
-    if (error) {
-      console.error('Lỗi tải nhóm hàng:', error.message);
-    } else {
-      setCategories(data || []);
-    }
-  }, [supabase]);
-
   useEffect(() => {
     fetchProducts();
-    fetchCategories();
-  }, [fetchProducts, fetchCategories]);
+  }, [fetchProducts]);
 
   /**
    * Xóa sản phẩm
@@ -88,31 +69,7 @@ export default function ProductsPage() {
   };
 
   /**
-   * Lấy tên nhóm hàng từ category_id
-   */
-  const getCategoryName = (categoryId: string): string => {
-    const category = categories.find((c) => c.id === categoryId);
-    return category?.name || '—';
-  };
-
-  /**
-   * Lấy nhóm chính (parent category)
-   */
-  const getMainCategory = (categoryId: string): string | null => {
-    const category = categories.find((c) => c.id === categoryId);
-    if (!category) return null;
-    if (!category.parent_id) return category.name;
-    const parent = categories.find((c) => c.id === category.parent_id);
-    return parent?.name || null;
-  };
-
-  /**
-   * Nhóm hàng chính (không có parent)
-   */
-  const mainCategories = categories.filter((c) => !c.parent_id);
-
-  /**
-   * Lọc sản phẩm theo tìm kiếm và nhóm hàng
+   * Lọc sản phẩm theo tìm kiếm
    */
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
@@ -122,15 +79,7 @@ export default function ProductsPage() {
       product.specification.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (product.barcode && product.barcode.includes(searchQuery));
 
-    const matchesCategory =
-      !selectedCategory ||
-      product.category_id === selectedCategory ||
-      // Lọc theo nhóm chính: bao gồm cả nhóm phụ
-      categories
-        .filter((c) => c.parent_id === selectedCategory)
-        .some((sub) => sub.id === product.category_id);
-
-    return matchesSearch && matchesCategory;
+    return matchesSearch;
   });
 
   /**
@@ -178,7 +127,7 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Search & Filter */}
+      {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex-1">
           <Input
@@ -189,23 +138,10 @@ export default function ProductsPage() {
             aria-label="Tìm kiếm sản phẩm"
           />
         </div>
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="h-12 rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Lọc theo nhóm hàng"
-        >
-          <option value="">Tất cả nhóm hàng</option>
-          {mainCategories.map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
         <Card>
           <CardContent className="p-3 md:p-4">
             <p className="text-xs text-muted-foreground">Tổng sản phẩm</p>
@@ -216,12 +152,6 @@ export default function ProductsPage() {
           <CardContent className="p-3 md:p-4">
             <p className="text-xs text-muted-foreground">Đang hiển thị</p>
             <p className="text-xl md:text-2xl font-bold">{filteredProducts.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 md:p-4">
-            <p className="text-xs text-muted-foreground">Nhóm hàng</p>
-            <p className="text-xl md:text-2xl font-bold">{mainCategories.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -247,8 +177,6 @@ export default function ProductsPage() {
             <ProductCardMobile
               key={product.id}
               product={product}
-              categoryName={getCategoryName(product.category_id)}
-              mainCategory={getMainCategory(product.category_id)}
               formatPrice={formatPrice}
               onDelete={handleDelete}
               isDeleting={deletingId === product.id}
@@ -274,7 +202,6 @@ export default function ProductsPage() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-3 px-2 font-medium">Sản phẩm</th>
-                      <th className="text-left py-3 px-2 font-medium">Nhóm hàng</th>
                       <th className="text-left py-3 px-2 font-medium">Đơn vị</th>
                       <th className="text-right py-3 px-2 font-medium">Giá bán</th>
                       <th className="text-right py-3 px-2 font-medium">Tồn kho</th>
@@ -287,8 +214,6 @@ export default function ProductsPage() {
                       <ProductRowDesktop
                         key={product.id}
                         product={product}
-                        categoryName={getCategoryName(product.category_id)}
-                        mainCategory={getMainCategory(product.category_id)}
                         formatPrice={formatPrice}
                         onDelete={handleDelete}
                         isDeleting={deletingId === product.id}
@@ -309,8 +234,6 @@ export default function ProductsPage() {
 
 interface ProductItemProps {
   product: Product;
-  categoryName: string;
-  mainCategory: string | null;
   formatPrice: (price: number) => string;
   onDelete: (id: string) => void;
   isDeleting: boolean;
@@ -318,8 +241,6 @@ interface ProductItemProps {
 
 function ProductCardMobile({
   product,
-  categoryName,
-  mainCategory,
   formatPrice,
   onDelete,
   isDeleting,
@@ -358,10 +279,6 @@ function ProductCardMobile({
         </div>
 
         <div className="mt-2">
-          <p className="text-xs text-muted-foreground">
-            Nhóm: {mainCategory && mainCategory !== categoryName ? `${mainCategory} > ` : ''}
-            {categoryName}
-          </p>
           {product.barcode && (
             <p className="text-xs text-muted-foreground">Mã vạch: {product.barcode}</p>
           )}
@@ -390,8 +307,6 @@ function ProductCardMobile({
 
 function ProductRowDesktop({
   product,
-  categoryName,
-  mainCategory,
   formatPrice,
   onDelete,
   isDeleting,
@@ -407,14 +322,6 @@ function ProductRowDesktop({
           {product.barcode && (
             <p className="text-xs text-muted-foreground">Mã: {product.barcode}</p>
           )}
-        </div>
-      </td>
-      <td className="py-3 px-2">
-        <div>
-          {mainCategory && mainCategory !== categoryName && (
-            <p className="text-xs text-muted-foreground">{mainCategory}</p>
-          )}
-          <p className="text-sm">{categoryName}</p>
         </div>
       </td>
       <td className="py-3 px-2">{product.base_unit}</td>

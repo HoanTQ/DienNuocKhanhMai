@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,8 @@ import {
   productCreateSchema,
   type ProductCreateInput,
   type UnitConversionInput,
-  MAIN_CATEGORIES,
 } from '@/lib/validations/product.schema';
-import type { Category, Product, UnitConversion } from '@/lib/types';
+import type { Product, UnitConversion } from '@/lib/types';
 
 interface ProductFormProps {
   /** Sản phẩm hiện tại (cho edit mode) */
@@ -28,9 +27,8 @@ interface ProductFormProps {
  * Form thêm/sửa sản phẩm
  *
  * Hỗ trợ:
- * - Required fields: name, category, brand, specification, base_unit
+ * - Required fields: name, brand, specification, base_unit
  * - Optional: barcode, image_url, description
- * - Phân loại nhóm chính (Điện, Nước, Sơn) và nhóm phụ
  * - Đơn vị quy đổi tối đa 3 cấp
  *
  * Validates: Requirements 6.1, 6.2, 6.3, 6.4
@@ -39,14 +37,9 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
   const isEdit = !!product;
   const supabase = useMemo(() => createClient(), []);
 
-  // Categories state
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedMainCategory, setSelectedMainCategory] = useState<string>('');
-
   // Form state
   const [formData, setFormData] = useState<Partial<ProductCreateInput>>({
     name: product?.name || '',
-    category_id: product?.category_id || '',
     brand: product?.brand || '',
     specification: product?.specification || '',
     base_unit: product?.base_unit || '',
@@ -73,45 +66,6 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  /**
-   * Fetch categories
-   */
-  useEffect(() => {
-    async function fetchCategories() {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name', { ascending: true });
-
-      if (!error && data) {
-        setCategories(data);
-
-        // Set initial main category for edit mode
-        if (product?.category_id) {
-          const cat = data.find((c) => c.id === product.category_id);
-          if (cat) {
-            if (cat.parent_id) {
-              setSelectedMainCategory(cat.parent_id);
-            } else {
-              setSelectedMainCategory(cat.id);
-            }
-          }
-        }
-      }
-    }
-    fetchCategories();
-  }, [supabase, product?.category_id]);
-
-  /**
-   * Nhóm hàng chính (không có parent)
-   */
-  const mainCategories = categories.filter((c) => !c.parent_id);
-
-  /**
-   * Nhóm hàng phụ (có parent = selectedMainCategory)
-   */
-  const subCategories = categories.filter((c) => c.parent_id === selectedMainCategory);
 
   /**
    * Update form field
@@ -200,7 +154,6 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
           .from('products')
           .update({
             name: result.data.name,
-            category_id: result.data.category_id,
             brand: result.data.brand,
             specification: result.data.specification,
             base_unit: result.data.base_unit,
@@ -242,7 +195,6 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
           .from('products')
           .insert({
             name: result.data.name,
-            category_id: result.data.category_id,
             brand: result.data.brand,
             specification: result.data.specification,
             base_unit: result.data.base_unit,
@@ -364,69 +316,6 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
               <p className="text-sm text-destructive">{errors.base_unit}</p>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Phân loại nhóm hàng */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Phân loại nhóm hàng</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Nhóm chính */}
-          <div className="space-y-2">
-            <Label htmlFor="main_category">
-              Nhóm chính <span className="text-destructive">*</span>
-            </Label>
-            <select
-              id="main_category"
-              value={selectedMainCategory}
-              onChange={(e) => {
-                setSelectedMainCategory(e.target.value);
-                // Nếu nhóm chính không có nhóm phụ, set category_id = nhóm chính
-                const subs = categories.filter((c) => c.parent_id === e.target.value);
-                if (subs.length === 0) {
-                  updateField('category_id', e.target.value);
-                } else {
-                  updateField('category_id', '');
-                }
-              }}
-              className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Chọn nhóm hàng chính"
-            >
-              <option value="">Chọn nhóm chính ({MAIN_CATEGORIES.join(', ')})</option>
-              {mainCategories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Nhóm phụ (nếu có) */}
-          {subCategories.length > 0 && (
-            <div className="space-y-2">
-              <Label htmlFor="sub_category">Nhóm phụ</Label>
-              <select
-                id="sub_category"
-                value={formData.category_id || ''}
-                onChange={(e) => updateField('category_id', e.target.value)}
-                className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label="Chọn nhóm hàng phụ"
-              >
-                <option value="">Chọn nhóm phụ</option>
-                {subCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {errors.category_id && (
-            <p className="text-sm text-destructive">{errors.category_id}</p>
-          )}
         </CardContent>
       </Card>
 

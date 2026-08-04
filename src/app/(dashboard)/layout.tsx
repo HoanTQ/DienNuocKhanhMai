@@ -46,19 +46,19 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/', label: 'Tổng quan', icon: Home, section: 'main' },
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'main' },
-  { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'main' },
-  { href: '/products', label: 'Sản phẩm', icon: ClipboardList, section: 'main' },
-  { href: '/customers', label: 'Khách hàng', icon: Users, section: 'main' },
-  { href: '/debts', label: 'Công nợ', icon: CreditCard, section: 'finance' },
-  { href: '/purchasing/orders', label: 'Đặt hàng', icon: Truck, section: 'finance' },
-  { href: '/purchasing/receipts', label: 'Nhập kho', icon: Package, section: 'finance' },
-  { href: '/purchasing/suppliers', label: 'Nhà cung cấp', icon: Building2, section: 'finance' },
-  { href: '/returns', label: 'Trả hàng', icon: RotateCcw, section: 'operations' },
-  { href: '/delivery', label: 'Giao hàng', icon: Truck, section: 'operations' },
-  { href: '/reports', label: 'Báo cáo', icon: BarChart3, section: 'operations' },
-  { href: '/reports/quotation', label: 'Báo giá', icon: FileText, section: 'operations' },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'sales' },
+  { href: '/customers', label: 'Khách hàng', icon: Users, section: 'sales' },
+  { href: '/debts', label: 'Công nợ KH', icon: CreditCard, section: 'sales' },
+  { href: '/reports/quotation', label: 'Báo giá', icon: FileText, section: 'sales' },
+  { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'warehouse' },
+  { href: '/products', label: 'Sản phẩm', icon: ClipboardList, section: 'warehouse' },
+  { href: '/purchasing/orders', label: 'Đặt hàng NCC', icon: Truck, section: 'warehouse' },
+  { href: '/purchasing/receipts', label: 'Nhập kho', icon: Package, section: 'warehouse' },
+  { href: '/purchasing/suppliers', label: 'Nhà cung cấp', icon: Building2, section: 'warehouse' },
+  { href: '/delivery', label: 'Giao hàng', icon: Truck, section: 'logistics' },
+  { href: '/returns', label: 'Trả hàng', icon: RotateCcw, section: 'logistics' },
+  { href: '/', label: 'Tổng quan', icon: Home, section: 'reports' },
+  { href: '/reports', label: 'Báo cáo', icon: BarChart3, section: 'reports' },
   { href: '/notifications', label: 'Thông báo', icon: Bell, section: 'system' },
   { href: '/audit-log', label: 'Nhật ký', icon: ClipboardList, section: 'system' },
   { href: '/settings', label: 'Cài đặt', icon: Settings, section: 'system' },
@@ -73,9 +73,10 @@ const mobileTabItems: NavItem[] = [
 ];
 
 const sectionLabels: Record<string, string> = {
-  main: 'Chính',
-  finance: 'Tài chính',
-  operations: 'Vận hành',
+  sales: 'Bán hàng',
+  warehouse: 'Kho & Mua hàng',
+  logistics: 'Giao hàng & Trả hàng',
+  reports: 'Báo cáo',
   system: 'Hệ thống',
 };
 
@@ -105,7 +106,7 @@ export default function DashboardLayout({
   const currentPageLabel = navItems.find((item) => isActive(item.href))?.label || 'Tổng quan';
 
   // Group nav items by section
-  const sections = ['main', 'finance', 'operations', 'system'];
+  const sections = ['sales', 'warehouse', 'logistics', 'reports', 'system'];
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
