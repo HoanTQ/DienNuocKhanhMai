@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarcodeScanner } from '@/components/barcode/BarcodeScanner';
+import { UnitCombobox } from '@/components/shared/UnitCombobox';
 import {
   productCreateSchema,
   type ProductCreateInput,
@@ -58,6 +59,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
       from_unit: c.from_unit,
       to_unit: c.to_unit,
       conversion_rate: c.conversion_rate,
+      selling_price: c.selling_price ?? null,
       level: c.level,
     })) || []
   );
@@ -90,7 +92,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
     const newLevel = (unitConversions.length + 1) as 1 | 2 | 3;
     setUnitConversions((prev) => [
       ...prev,
-      { from_unit: '', to_unit: formData.base_unit || '', conversion_rate: 1, level: newLevel },
+      { from_unit: '', to_unit: formData.base_unit || '', conversion_rate: 1, selling_price: null, level: newLevel },
     ]);
   };
 
@@ -180,6 +182,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             from_unit: c.from_unit,
             to_unit: c.to_unit,
             conversion_rate: Number(c.conversion_rate),
+            selling_price: c.selling_price ? Number(c.selling_price) : null,
             level: c.level,
           }));
 
@@ -220,6 +223,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             from_unit: c.from_unit,
             to_unit: c.to_unit,
             conversion_rate: Number(c.conversion_rate),
+            selling_price: c.selling_price ? Number(c.selling_price) : null,
             level: c.level,
           }));
 
@@ -305,12 +309,12 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             <Label htmlFor="base_unit">
               Đơn vị tính cơ bản <span className="text-destructive">*</span>
             </Label>
-            <Input
+            <UnitCombobox
               id="base_unit"
               value={formData.base_unit || ''}
-              onChange={(e) => updateField('base_unit', e.target.value)}
-              placeholder="VD: mét, cái, kg, cuộn"
-              aria-invalid={!!errors.base_unit}
+              onChange={(value) => updateField('base_unit', value)}
+              placeholder="Chọn đơn vị tính..."
+              error={!!errors.base_unit}
             />
             {errors.base_unit && (
               <p className="text-sm text-destructive">{errors.base_unit}</p>
@@ -463,16 +467,16 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
                     Xóa
                   </Button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Đơn vị nguồn</Label>
-                    <Input
+                    <UnitCombobox
                       value={conversion.from_unit}
-                      onChange={(e) =>
-                        updateUnitConversion(index, 'from_unit', e.target.value)
+                      onChange={(value) =>
+                        updateUnitConversion(index, 'from_unit', value)
                       }
                       placeholder="VD: cuộn"
-                      className="h-10"
+                      className="[&_input]:h-10"
                     />
                   </div>
                   <div className="space-y-1">
@@ -491,12 +495,27 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Đơn vị đích</Label>
-                    <Input
+                    <UnitCombobox
                       value={conversion.to_unit}
-                      onChange={(e) =>
-                        updateUnitConversion(index, 'to_unit', e.target.value)
+                      onChange={(value) =>
+                        updateUnitConversion(index, 'to_unit', value)
                       }
                       placeholder={formData.base_unit || 'VD: mét'}
+                      className="[&_input]:h-10"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Giá bán riêng (₫)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={conversion.selling_price ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? null : Number(e.target.value);
+                        updateUnitConversion(index, 'selling_price', val as unknown as number);
+                      }}
+                      placeholder="Để trống = tự tính"
                       className="h-10"
                     />
                   </div>
@@ -504,6 +523,17 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
                 <p className="text-xs text-muted-foreground">
                   1 {conversion.from_unit || '?'} = {conversion.conversion_rate}{' '}
                   {conversion.to_unit || '?'}
+                  {conversion.selling_price ? (
+                    <span className="ml-2 text-primary font-medium">
+                      • Giá bán: {Number(conversion.selling_price).toLocaleString('vi-VN')}₫/{conversion.from_unit || '?'}
+                    </span>
+                  ) : (
+                    formData.selling_price ? (
+                      <span className="ml-2">
+                        • Giá tự tính: {(Number(formData.selling_price) * conversion.conversion_rate).toLocaleString('vi-VN')}₫/{conversion.from_unit || '?'}
+                      </span>
+                    ) : null
+                  )}
                 </p>
               </div>
             ))

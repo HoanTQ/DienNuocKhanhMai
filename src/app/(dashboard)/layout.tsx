@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   Building2,
   X,
+  Ruler,
 } from 'lucide-react';
 import { NotificationBell } from '@/components/shared/NotificationBell';
 import { cn } from '@/lib/utils';
@@ -61,6 +62,7 @@ const navItems: NavItem[] = [
   { href: '/customers', label: 'Khách hàng', icon: Users, section: 'master' },
   { href: '/purchasing/suppliers', label: 'Nhà cung cấp', icon: Building2, section: 'master' },
   { href: '/delivery#transporters', label: 'Người vận chuyển', icon: Truck, section: 'master' },
+  { href: '/settings/units', label: 'Đơn vị tính', icon: Ruler, section: 'master' },
   { href: '/notifications', label: 'Thông báo', icon: Bell, section: 'system' },
   { href: '/audit-log', label: 'Nhật ký', icon: ClipboardList, section: 'system' },
   { href: '/settings', label: 'Cài đặt', icon: Settings, section: 'system' },

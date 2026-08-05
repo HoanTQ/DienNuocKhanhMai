@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { ShoppingCart, Minus, Plus, Trash2, Banknote, Building, Percent, Hash } from 'lucide-react';
 import { ProductSearch } from '@/components/shared/ProductSearch';
 import {
@@ -9,9 +9,10 @@ import {
   getDiscountAmount,
   getTotal,
 } from '@/lib/stores/pos.store';
-import type { Product, UserProfile } from '@/lib/types';
+import type { Product, UnitConversion, UserProfile } from '@/lib/types';
 import { POSCustomerSelect } from '@/components/pos/POSCustomerSelect';
 import { createClient } from '@/lib/supabase/client';
+import { convertUnit } from '@/services/pricing.service';
 
 /**
  * POS Page — Approach 2: Compact dropdown overlay + scrollable cart
@@ -21,6 +22,7 @@ import { createClient } from '@/lib/supabase/client';
  * - Cart scrolls independently below
  * - Payment summary fixed bottom
  * - Desktop: split view (search+cart left | payment right)
+ * - Hỗ trợ bán theo đơn vị quy đổi (cuộn, thùng...) với giá tự tính
  */
 export default function POSPage() {
   const {
@@ -47,10 +49,16 @@ export default function POSPage() {
   } = usePOSStore();
 
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const supabase = useMemo(() => createClient(), []);
+
+  // Unit selection modal state
+  const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
+  const [productConversions, setProductConversions] = useState<UnitConversion[]>([]);
+  const [selectedUnit, setSelectedUnit] = useState<string>('');
+  const [addQuantity, setAddQuantity] = useState<number>(1);
 
   useEffect(() => {
     const fetchUser = async () => {
-      const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data: profile } = await supabase
@@ -61,15 +69,89 @@ export default function POSPage() {
       if (profile) setCurrentUser(profile as UserProfile);
     };
     fetchUser();
-  }, []);
+  }, [supabase]);
 
   const subtotal = getSubtotal(cartItems);
   const discountAmount = getDiscountAmount(subtotal, discountType, discountValue);
   const total = getTotal(subtotal, discountAmount);
 
-  const handleQuickAdd = useCallback((product: Product) => {
-    addItem(product, 1, product.base_unit);
-  }, [addItem]);
+  /**
+   * Khi chọn sản phẩm từ search, fetch conversions để hiển thị cho chọn đơn vị.
+   * Nếu sản phẩm không có quy đổi → thêm trực tiếp với base_unit.
+   */
+  const handleProductSelected = useCallback(async (product: Product) => {
+    // Fetch unit conversions for this product
+    const { data: conversions } = await supabase
+      .from('unit_conversions')
+      .select('*')
+      .eq('product_id', product.id)
+      .order('level', { ascending: true });
+
+    if (!conversions || conversions.length === 0) {
+      // No conversions → add directly with base_unit
+      addItem(product, 1, product.base_unit);
+    } else {
+      // Show unit selection
+      setPendingProduct(product);
+      setProductConversions(conversions);
+      setSelectedUnit(product.base_unit);
+      setAddQuantity(1);
+    }
+  }, [supabase, addItem]);
+
+  /**
+   * Tính giá bán theo đơn vị được chọn.
+   * Ưu tiên: selling_price riêng (nếu có) > tự tính từ base_price × conversion_rate
+   */
+  const getUnitPrice = useCallback((product: Product, unit: string, conversions: UnitConversion[]): number => {
+    if (unit === product.base_unit) {
+      return product.selling_price;
+    }
+
+    // Tìm conversion có selling_price riêng cho đơn vị này
+    const convWithPrice = conversions.find(
+      (c) => c.from_unit === unit && c.selling_price != null && c.selling_price > 0
+    );
+    if (convWithPrice && convWithPrice.selling_price) {
+      return convWithPrice.selling_price;
+    }
+
+    // Fallback: tự tính = base_price × conversion_rate
+    try {
+      const rateToBase = convertUnit(1, unit, product.base_unit, conversions);
+      return product.selling_price * rateToBase;
+    } catch {
+      return product.selling_price;
+    }
+  }, []);
+
+  /** Xác nhận thêm sản phẩm với đơn vị đã chọn */
+  const handleConfirmAddItem = useCallback(() => {
+    if (!pendingProduct) return;
+    const unitPrice = getUnitPrice(pendingProduct, selectedUnit, productConversions);
+    // Override selling_price with calculated unit price
+    addItem({ ...pendingProduct, selling_price: unitPrice }, addQuantity, selectedUnit);
+    setPendingProduct(null);
+    setProductConversions([]);
+  }, [pendingProduct, selectedUnit, addQuantity, productConversions, addItem, getUnitPrice]);
+
+  /** Đóng modal chọn đơn vị */
+  const handleCancelUnitSelection = useCallback(() => {
+    setPendingProduct(null);
+    setProductConversions([]);
+  }, []);
+
+  /** Lấy danh sách đơn vị có thể bán (base + tất cả from_unit) */
+  const availableUnits = useMemo(() => {
+    if (!pendingProduct) return [];
+    const units = new Set<string>();
+    units.add(pendingProduct.base_unit);
+    productConversions.forEach((c) => {
+      units.add(c.from_unit);
+      units.add(c.to_unit);
+    });
+    return Array.from(units);
+  }, [pendingProduct, productConversions]);
 
   const handleSubmitOrder = useCallback(async () => {
     const userId = currentUser?.id || 'unknown';
@@ -96,7 +178,7 @@ export default function POSPage() {
         {/* Search Bar - Sticky top with compact dropdown */}
         <div className="flex-shrink-0 bg-white border-b border-border p-3 lg:p-4 z-10">
           <ProductSearch
-            onSelectProduct={handleQuickAdd}
+            onSelectProduct={handleProductSelected}
             placeholder="Quét mã vạch hoặc tìm sản phẩm..."
             showBarcodeScanner={true}
           />
@@ -161,7 +243,28 @@ export default function POSPage() {
                         <p className="text-sm font-medium text-foreground">
                           {item.product_name}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        {/* Thương hiệu + Quy cách badges */}
+                        {(item.brand || item.specification) && (
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {item.brand && (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
+                                  <path d="M8.5 2.687a.5.5 0 0 0-1 0v.403a3.251 3.251 0 0 0-2.592 2.175l-.089.267a3.25 3.25 0 0 0 1.164 3.582l.639.466a1.75 1.75 0 0 1 .627 1.93l-.095.286A3.25 3.25 0 0 0 10.23 14.7l.089-.267a3.25 3.25 0 0 0-1.164-3.582l-.639-.466a1.75 1.75 0 0 1-.627-1.93l.095-.286a1.75 1.75 0 0 1 1.396-1.172V5.5h1a.5.5 0 0 0 0-1h-1V2.687Z"/>
+                                </svg>
+                                {item.brand}
+                              </span>
+                            )}
+                            {item.specification && (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
+                                  <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 0 0 2 4.5v2.879a2.5 2.5 0 0 0 .732 1.767l4.5 4.5a2.5 2.5 0 0 0 3.536 0l2.878-2.878a2.5 2.5 0 0 0 0-3.536l-4.5-4.5A2.5 2.5 0 0 0 7.38 2H4.5ZM5 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd"/>
+                                </svg>
+                                {item.specification}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
                           <span className="font-mono">{formatPrice(item.unit_price)}</span>/{item.unit}
                         </p>
                       </div>
@@ -203,7 +306,7 @@ export default function POSPage() {
                           <Plus className="h-4 w-4" />
                         </button>
                       </div>
-                      <p className="text-base font-semibold font-mono text-foreground">
+                      <p className="text-lg font-bold font-mono text-foreground">
                         {formatPrice(item.line_total)}
                       </p>
                     </div>
@@ -346,6 +449,124 @@ export default function POSPage() {
           </button>
         </div>
       </div>
+
+      {/* === Unit Selection Modal === */}
+      {pendingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={handleCancelUnitSelection}
+          />
+          {/* Modal */}
+          <div className="relative bg-white rounded-xl shadow-xl w-[90%] max-w-sm mx-4 overflow-hidden">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-semibold text-base">Chọn đơn vị bán</h3>
+              <p className="text-sm text-muted-foreground mt-1 truncate">
+                {pendingProduct.name} — {pendingProduct.brand}
+              </p>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Unit buttons */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Đơn vị
+                </label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {availableUnits.map((unit) => {
+                    const price = getUnitPrice(pendingProduct, unit, productConversions);
+                    return (
+                      <button
+                        key={unit}
+                        type="button"
+                        onClick={() => setSelectedUnit(unit)}
+                        className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors cursor-pointer ${
+                          selectedUnit === unit
+                            ? 'border-primary bg-accent text-primary'
+                            : 'border-border text-foreground hover:border-primary/50'
+                        }`}
+                      >
+                        <span>{unit}</span>
+                        <span className="block text-xs font-normal text-muted-foreground mt-0.5">
+                          {formatPrice(price)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Số lượng
+                </label>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddQuantity(Math.max(0.01, addQuantity - 1))}
+                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <input
+                    type="number"
+                    min={0.01}
+                    step="any"
+                    value={addQuantity}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v) && v > 0) setAddQuantity(v);
+                    }}
+                    className="w-20 h-10 text-center text-base font-medium border border-border rounded-lg focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAddQuantity(addQuantity + 1)}
+                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Đơn giá:</span>
+                  <span className="font-mono font-medium">
+                    {formatPrice(getUnitPrice(pendingProduct, selectedUnit, productConversions))}/{selectedUnit}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm mt-1">
+                  <span className="text-muted-foreground">Thành tiền:</span>
+                  <span className="font-mono font-semibold text-primary">
+                    {formatPrice(addQuantity * getUnitPrice(pendingProduct, selectedUnit, productConversions))}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-4 border-t border-border flex gap-3">
+              <button
+                type="button"
+                onClick={handleCancelUnitSelection}
+                className="flex-1 h-11 rounded-lg border border-border text-sm font-medium hover:bg-muted transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAddItem}
+                className="flex-1 h-11 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors cursor-pointer"
+              >
+                Thêm vào giỏ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

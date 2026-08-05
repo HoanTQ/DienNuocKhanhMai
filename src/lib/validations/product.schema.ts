@@ -17,6 +17,11 @@ export const unitConversionSchema = z.object({
   conversion_rate: z
     .number({ error: 'Tỷ lệ quy đổi là bắt buộc' })
     .positive('Tỷ lệ quy đổi phải lớn hơn 0'),
+  selling_price: z
+    .number()
+    .min(0, 'Giá bán không được âm')
+    .nullable()
+    .optional(),
   level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 });
 

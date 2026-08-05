@@ -320,20 +320,35 @@ export function ProductSearch({
                 }}
                 aria-label={`Chọn ${product.name} - ${product.specification}`}
               >
-                {/* Tên sản phẩm + thương hiệu */}
+                {/* Tên sản phẩm + giá */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {product.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {product.brand} · {product.specification}
-                    </p>
-                  </div>
+                  <p className="text-sm font-semibold text-foreground truncate min-w-0 flex-1">
+                    {product.name}
+                  </p>
                   {/* Giá bán */}
                   <span className="text-sm font-semibold font-mono text-success whitespace-nowrap">
                     {formatPrice(product.selling_price)}
                   </span>
+                </div>
+
+                {/* Thương hiệu + Quy cách — tách riêng, dễ nhìn */}
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  {product.brand && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
+                        <path d="M8.5 2.687a.5.5 0 0 0-1 0v.403a3.251 3.251 0 0 0-2.592 2.175l-.089.267a3.25 3.25 0 0 0 1.164 3.582l.639.466a1.75 1.75 0 0 1 .627 1.93l-.095.286A3.25 3.25 0 0 0 10.23 14.7l.089-.267a3.25 3.25 0 0 0-1.164-3.582l-.639-.466a1.75 1.75 0 0 1-.627-1.93l.095-.286a1.75 1.75 0 0 1 1.396-1.172V5.5h1a.5.5 0 0 0 0-1h-1V2.687Z"/>
+                      </svg>
+                      {product.brand}
+                    </span>
+                  )}
+                  {product.specification && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
+                        <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 0 0 2 4.5v2.879a2.5 2.5 0 0 0 .732 1.767l4.5 4.5a2.5 2.5 0 0 0 3.536 0l2.878-2.878a2.5 2.5 0 0 0 0-3.536l-4.5-4.5A2.5 2.5 0 0 0 7.38 2H4.5ZM5 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd"/>
+                      </svg>
+                      {product.specification}
+                    </span>
+                  )}
                 </div>
 
                 {/* Đơn vị tính + Tồn kho */}

@@ -23,6 +23,8 @@ export interface CartItem {
   id: string;
   product_id: string;
   product_name: string;
+  brand?: string;
+  specification?: string;
   quantity: number;
   unit: string;
   unit_price: number;
@@ -72,7 +74,7 @@ export interface ApplyDiscountResult {
  */
 export function addItemToCart(
   currentItems: CartItem[],
-  product: Pick<Product, 'id' | 'name' | 'selling_price'>,
+  product: Pick<Product, 'id' | 'name' | 'selling_price' | 'brand' | 'specification'>,
   quantity: number,
   unit: string
 ): CartItem[] {
@@ -116,6 +118,8 @@ export function addItemToCart(
     id: generateCartItemId(),
     product_id: product.id,
     product_name: product.name,
+    brand: product.brand,
+    specification: product.specification,
     quantity,
     unit,
     unit_price: product.selling_price,
