@@ -24,12 +24,23 @@ export interface Product {
   updated_at: string;
 }
 
+export interface Unit {
+  id: string;
+  name: string;
+  abbreviation?: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface UnitConversion {
   id: string;
   product_id: string;
   from_unit: string;
   to_unit: string;
   conversion_rate: number;
+  selling_price?: number | null; // Giá bán riêng cho đơn vị này (null = tự tính)
   level: 1 | 2 | 3; // Tối đa 3 cấp quy đổi
 }
 
@@ -151,6 +162,12 @@ export interface GoodsReceiptItem {
   unit: string;
   unit_cost: number;
   line_total: number;
+  /** Tổng thanh toán sau chiết khấu (user nhập) */
+  total_payment?: number;
+  /** Loại chiết khấu: 'percent' hoặc 'fixed' */
+  discount_type?: 'percent' | 'fixed';
+  /** Giá trị chiết khấu (VD: 5 = 5%, hoặc 370000đ) */
+  discount_value?: number;
 }
 
 export interface PromotionalItem {

@@ -4,7 +4,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import ProductForm from '@/components/products/ProductForm';
-import type { Product, UnitConversion } from '@/lib/types';
+import ProductPriceInfo from '@/components/products/ProductPriceInfo';
+import type { Product, UnitConversion, UserProfile } from '@/lib/types';
 
 /**
  * Trang Sửa sản phẩm
@@ -18,14 +19,26 @@ export default function EditProductPage() {
 
   const [product, setProduct] = useState<Product | null>(null);
   const [conversions, setConversions] = useState<UnitConversion[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    async function fetchProduct() {
+    async function fetchData() {
       setLoading(true);
+
+      // Fetch user profile for role check
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        if (profile) setUserProfile(profile as UserProfile);
+      }
 
       // Fetch product
       const { data: productData, error: productError } = await supabase
@@ -54,7 +67,7 @@ export default function EditProductPage() {
     }
 
     if (productId) {
-      fetchProduct();
+      fetchData();
     }
   }, [productId, supabase]);
 
@@ -100,6 +113,13 @@ export default function EditProductPage() {
           Cập nhật thông tin cho: <span className="font-medium">{product.name}</span>
         </p>
       </div>
+
+      {/* Price Info — Owner only */}
+      {userProfile?.role === 'owner' && (
+        <div className="mb-6">
+          <ProductPriceInfo product={product} />
+        </div>
+      )}
 
       <ProductForm
         product={product}

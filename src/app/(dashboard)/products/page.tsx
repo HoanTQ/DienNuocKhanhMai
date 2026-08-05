@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { Product } from '@/lib/types';
+import type { Product, UserProfile } from '@/lib/types';
 import Link from 'next/link';
 
 /**
@@ -14,6 +14,7 @@ import Link from 'next/link';
  *
  * Hiển thị danh sách sản phẩm với tìm kiếm.
  * Hỗ trợ thêm, sửa sản phẩm.
+ * Owner: hiển thị thêm Giá vốn, Giá NCC, Biên lợi nhuận
  *
  * Validates: Requirements 6.1, 6.2, 6.3
  */
@@ -22,6 +23,9 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  // Map: product_id → latest supplier price
+  const [supplierPriceMap, setSupplierPriceMap] = useState<Record<string, number>>({});
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -30,6 +34,18 @@ export default function ProductsPage() {
    */
   const fetchProducts = useCallback(async () => {
     setLoading(true);
+
+    // Fetch user profile
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (profile) setUserProfile(profile as UserProfile);
+    }
+
     const { data, error } = await supabase
       .from('products')
       .select('*')
@@ -39,6 +55,25 @@ export default function ProductsPage() {
       console.error('Lỗi tải danh sách sản phẩm:', error.message);
     } else {
       setProducts(data || []);
+
+      // Fetch supplier prices (latest per product) — Owner only
+      if (data && data.length > 0) {
+        const { data: pricesData } = await supabase
+          .from('supplier_prices')
+          .select('product_id, unit_price, effective_date')
+          .order('effective_date', { ascending: false });
+
+        if (pricesData) {
+          // Lấy giá mới nhất cho mỗi product
+          const priceMap: Record<string, number> = {};
+          for (const p of pricesData) {
+            if (!priceMap[p.product_id]) {
+              priceMap[p.product_id] = p.unit_price;
+            }
+          }
+          setSupplierPriceMap(priceMap);
+        }
+      }
     }
     setLoading(false);
   }, [supabase]);
@@ -180,6 +215,8 @@ export default function ProductsPage() {
               formatPrice={formatPrice}
               onDelete={handleDelete}
               isDeleting={deletingId === product.id}
+              isOwner={userProfile?.role === 'owner'}
+              supplierPrice={supplierPriceMap[product.id]}
             />
           ))
         )}
@@ -204,8 +241,14 @@ export default function ProductsPage() {
                       <th className="text-left py-3 px-2 font-medium">Sản phẩm</th>
                       <th className="text-left py-3 px-2 font-medium">Đơn vị</th>
                       <th className="text-right py-3 px-2 font-medium">Giá bán</th>
+                      {userProfile?.role === 'owner' && (
+                        <>
+                          <th className="text-right py-3 px-2 font-medium">Giá vốn</th>
+                          <th className="text-right py-3 px-2 font-medium">Giá NCC</th>
+                          <th className="text-right py-3 px-2 font-medium">Lợi nhuận</th>
+                        </>
+                      )}
                       <th className="text-right py-3 px-2 font-medium">Tồn kho</th>
-                      <th className="text-center py-3 px-2 font-medium">Loại giá</th>
                       <th className="text-center py-3 px-2 font-medium">Thao tác</th>
                     </tr>
                   </thead>
@@ -217,6 +260,8 @@ export default function ProductsPage() {
                         formatPrice={formatPrice}
                         onDelete={handleDelete}
                         isDeleting={deletingId === product.id}
+                        isOwner={userProfile?.role === 'owner'}
+                        supplierPrice={supplierPriceMap[product.id]}
                       />
                     ))}
                   </tbody>
@@ -237,6 +282,8 @@ interface ProductItemProps {
   formatPrice: (price: number) => string;
   onDelete: (id: string) => void;
   isDeleting: boolean;
+  isOwner?: boolean;
+  supplierPrice?: number;
 }
 
 function ProductCardMobile({
@@ -244,7 +291,14 @@ function ProductCardMobile({
   formatPrice,
   onDelete,
   isDeleting,
+  isOwner,
+  supplierPrice,
 }: ProductItemProps) {
+  const wac = product.weighted_avg_cost;
+  const profitPercent = wac > 0
+    ? ((product.selling_price - wac) / wac * 100).toFixed(1)
+    : null;
+
   return (
     <Card>
       <CardContent className="p-4">
@@ -278,6 +332,30 @@ function ProductCardMobile({
           </div>
         </div>
 
+        {/* Price info — Owner only */}
+        {isOwner && (
+          <div className="grid grid-cols-3 gap-3 mt-2 pt-2 border-t border-dashed">
+            <div>
+              <p className="text-xs text-muted-foreground">Giá vốn</p>
+              <p className="text-sm font-semibold text-orange-600">
+                {wac > 0 ? formatPrice(wac) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Giá NCC</p>
+              <p className="text-sm font-semibold text-blue-600">
+                {supplierPrice ? formatPrice(supplierPrice) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Lợi nhuận</p>
+              <p className={`text-sm font-semibold ${profitPercent && parseFloat(profitPercent) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {profitPercent ? `${profitPercent}%` : '—'}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="mt-2">
           {product.barcode && (
             <p className="text-xs text-muted-foreground">Mã vạch: {product.barcode}</p>
@@ -310,7 +388,14 @@ function ProductRowDesktop({
   formatPrice,
   onDelete,
   isDeleting,
+  isOwner,
+  supplierPrice,
 }: ProductItemProps) {
+  const wac = product.weighted_avg_cost;
+  const profitPercent = wac > 0
+    ? ((product.selling_price - wac) / wac * 100).toFixed(1)
+    : null;
+
   return (
     <tr className="border-b last:border-b-0 hover:bg-muted/50">
       <td className="py-3 px-2">
@@ -328,13 +413,31 @@ function ProductRowDesktop({
       <td className="py-3 px-2 text-right font-medium">
         {formatPrice(product.selling_price)}
       </td>
+      {isOwner && (
+        <>
+          <td className="py-3 px-2 text-right">
+            <span className="text-orange-600 font-medium">
+              {wac > 0 ? formatPrice(wac) : '—'}
+            </span>
+          </td>
+          <td className="py-3 px-2 text-right">
+            <span className="text-blue-600 font-medium">
+              {supplierPrice ? formatPrice(supplierPrice) : '—'}
+            </span>
+          </td>
+          <td className="py-3 px-2 text-right">
+            {profitPercent ? (
+              <Badge variant={parseFloat(profitPercent) >= 0 ? 'success' : 'destructive'} className="text-xs">
+                {profitPercent}%
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </td>
+        </>
+      )}
       <td className="py-3 px-2 text-right">
         {product.current_stock} {product.base_unit}
-      </td>
-      <td className="py-3 px-2 text-center">
-        <Badge variant={product.price_type === 'fixed' ? 'secondary' : 'warning'} className="text-xs">
-          {product.price_type === 'fixed' ? 'Cố định' : 'Biến động'}
-        </Badge>
       </td>
       <td className="py-3 px-2 text-center">
         <div className="flex items-center justify-center gap-1">

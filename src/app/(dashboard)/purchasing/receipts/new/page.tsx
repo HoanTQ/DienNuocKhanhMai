@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ProductSearch } from '@/components/shared/ProductSearch';
-import type { Product, Supplier } from '@/lib/types';
+import type { Product, Supplier, UnitConversion } from '@/lib/types';
 import { useRouter } from 'next/navigation';
+import { convertUnit, calculateUnitPriceFromPayment } from '@/services/pricing.service';
 
 // === Local Types ===
 
@@ -17,8 +18,14 @@ interface ReceiptItemDraft {
   id: string;
   product: Product;
   quantity: number;
-  unit_cost: number;
+  unit: string; // Đơn vị nhập (có thể khác base_unit)
+  unit_cost: number; // Giá vốn/sp (tự tính = total_payment / quantity)
+  total_payment: number; // Tổng thanh toán sau CK (user nhập)
+  discount_type: 'percent' | 'fixed'; // Loại chiết khấu
+  discount_value: number; // Giá trị CK (VD: 5 cho 5%, hoặc 370000)
+  supplier_price: number; // Giá NCC tham khảo (từ supplier_prices)
   ordered_quantity?: number; // Số lượng đặt (từ PO)
+  conversions: UnitConversion[]; // Quy đổi của sản phẩm
 }
 
 interface PromotionalItemDraft {
@@ -96,34 +103,78 @@ export default function NewGoodsReceiptPage() {
 
   // === Item Management ===
 
-  const handleAddProduct = useCallback((product: Product) => {
-    setItems((prev) => {
-      // Check if product already in list
-      const existing = prev.find((item) => item.product.id === product.id);
-      if (existing) return prev;
-      return [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          product,
-          quantity: 1,
-          unit_cost: product.last_cost || 0,
-          ordered_quantity: undefined,
-        },
-      ];
-    });
-  }, []);
+  const handleAddProduct = useCallback(async (product: Product) => {
+    // Check if already added
+    const existing = items.find((item) => item.product.id === product.id);
+    if (existing) return;
+
+    // Fetch unit conversions
+    const { data: conversions } = await supabase
+      .from('unit_conversions')
+      .select('*')
+      .eq('product_id', product.id)
+      .order('level', { ascending: true });
+
+    // Fetch giá NCC mới nhất cho sản phẩm này (nếu đã chọn NCC)
+    let supplierPrice = 0;
+    if (selectedSupplierId) {
+      const { data: priceData } = await supabase
+        .from('supplier_prices')
+        .select('unit_price')
+        .eq('product_id', product.id)
+        .eq('supplier_id', selectedSupplierId)
+        .order('effective_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (priceData) {
+        supplierPrice = priceData.unit_price;
+      }
+    }
+
+    setItems((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        product,
+        quantity: 1,
+        unit: product.base_unit,
+        unit_cost: 0,
+        total_payment: 0,
+        discount_type: 'percent',
+        discount_value: 0,
+        supplier_price: supplierPrice,
+        ordered_quantity: undefined,
+        conversions: conversions || [],
+      },
+    ]);
+  }, [supabase, items, selectedSupplierId]);
 
   const handleRemoveItem = useCallback((itemId: string) => {
     setItems((prev) => prev.filter((i) => i.id !== itemId));
   }, []);
 
   const handleUpdateItem = useCallback(
-    (itemId: string, field: 'quantity' | 'unit_cost' | 'ordered_quantity', value: number) => {
+    (itemId: string, field: 'quantity' | 'unit_cost' | 'ordered_quantity' | 'unit' | 'total_payment' | 'discount_type' | 'discount_value', value: number | string) => {
       setItems((prev) =>
-        prev.map((item) =>
-          item.id === itemId ? { ...item, [field]: value } : item
-        )
+        prev.map((item) => {
+          if (item.id !== itemId) return item;
+
+          const updated = { ...item, [field]: value };
+
+          // Auto-calculate unit_cost khi quantity và total_payment thay đổi
+          if (field === 'quantity' || field === 'total_payment') {
+            const qty = field === 'quantity' ? (value as number) : updated.quantity;
+            const payment = field === 'total_payment' ? (value as number) : updated.total_payment;
+            if (qty > 0 && payment > 0) {
+              updated.unit_cost = calculateUnitPriceFromPayment(payment, qty);
+            } else {
+              updated.unit_cost = 0;
+            }
+          }
+
+          return updated;
+        })
       );
     },
     []
@@ -192,7 +243,7 @@ export default function NewGoodsReceiptPage() {
   // === Calculations ===
 
   const totalAmount = items.reduce(
-    (sum, item) => sum + item.quantity * item.unit_cost,
+    (sum, item) => sum + item.total_payment,
     0
   );
 
@@ -220,13 +271,27 @@ export default function NewGoodsReceiptPage() {
     setError(null);
 
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        setIsSubmitting(false);
+        return;
+      }
+
       // 1. Create goods_receipt
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const receiptNumber = `GR-${dateStr}-${random}`;
+
       const { data: receipt, error: receiptError } = await supabase
         .from('goods_receipts')
         .insert({
+          receipt_number: receiptNumber,
           supplier_id: selectedSupplierId,
           status,
-          created_by: 'current-user-id', // TODO: get from auth context
+          created_by: user.id,
         })
         .select()
         .single();
@@ -235,15 +300,40 @@ export default function NewGoodsReceiptPage() {
         throw new Error(receiptError?.message || 'Không thể tạo phiếu nhập');
       }
 
-      // 2. Insert goods_receipt_items
-      const receiptItems = items.map((item) => ({
-        goods_receipt_id: receipt.id,
-        product_id: item.product.id,
-        quantity: item.quantity,
-        unit: item.product.base_unit,
-        unit_cost: item.unit_cost,
-        line_total: item.quantity * item.unit_cost,
-      }));
+      // 2. Insert goods_receipt_items (convert quantity to base_unit for stock)
+      const receiptItems = items.map((item) => {
+        // Quy đổi số lượng về base_unit nếu nhập theo đơn vị khác
+        let quantityInBaseUnit = item.quantity;
+        if (item.unit !== item.product.base_unit && item.conversions.length > 0) {
+          try {
+            quantityInBaseUnit = convertUnit(
+              item.quantity,
+              item.unit,
+              item.product.base_unit,
+              item.conversions
+            );
+          } catch {
+            // Fallback: dùng số lượng nhập nếu không quy đổi được
+            quantityInBaseUnit = item.quantity;
+          }
+        }
+
+        // Tính unit_price từ total_payment / quantity (đã quy đổi base_unit)
+        const unitPrice = quantityInBaseUnit > 0
+          ? calculateUnitPriceFromPayment(item.total_payment, quantityInBaseUnit)
+          : 0;
+
+        return {
+          goods_receipt_id: receipt.id,
+          product_id: item.product.id,
+          quantity: quantityInBaseUnit,
+          unit: item.product.base_unit,
+          unit_price: unitPrice,
+          total_payment: item.total_payment,
+          discount_type: item.discount_type,
+          discount_value: item.discount_value,
+        };
+      });
 
       const { error: itemsError } = await supabase
         .from('goods_receipt_items')
@@ -280,7 +370,7 @@ export default function NewGoodsReceiptPage() {
           quantity: item.quantity,
           unit: item.unit,
           reason: item.reason,
-          status: 'pending_return',
+          status: 'pending',
         }));
 
         const { error: defectiveError } = await supabase
@@ -671,19 +761,45 @@ export default function NewGoodsReceiptPage() {
 
 interface ReceiptItemRowProps {
   item: ReceiptItemDraft;
-  onUpdate: (id: string, field: 'quantity' | 'unit_cost' | 'ordered_quantity', value: number) => void;
+  onUpdate: (id: string, field: 'quantity' | 'unit_cost' | 'ordered_quantity' | 'unit' | 'total_payment' | 'discount_type' | 'discount_value', value: number | string) => void;
   onRemove: (id: string) => void;
   formatPrice: (price: number) => string;
 }
 
 /**
  * Row hiển thị một sản phẩm trong phiếu nhập
- * Bao gồm so sánh số lượng đặt vs thực nhận
+ * Flow mới: nhập Số lượng + Chiết khấu + Thanh toán → tự tính Giá vốn/sp
  */
 function ReceiptItemRow({ item, onUpdate, onRemove, formatPrice }: ReceiptItemRowProps) {
-  const lineTotal = item.quantity * item.unit_cost;
   const hasOrderedQty = item.ordered_quantity !== undefined && item.ordered_quantity > 0;
   const qtyDiff = hasOrderedQty ? item.quantity - (item.ordered_quantity || 0) : 0;
+
+  // Tính số lượng quy đổi về base_unit để hiển thị
+  let convertedQty: number | null = null;
+  if (item.unit !== item.product.base_unit && item.conversions.length > 0) {
+    try {
+      convertedQty = convertUnit(item.quantity, item.unit, item.product.base_unit, item.conversions);
+    } catch {
+      convertedQty = null;
+    }
+  }
+
+  // Tính % CK thực tế (nếu có giá NCC)
+  const subtotal = item.supplier_price > 0 ? item.supplier_price * item.quantity : 0;
+  const actualDiscountPercent = subtotal > 0 && item.total_payment > 0 && item.total_payment < subtotal
+    ? ((1 - item.total_payment / subtotal) * 100).toFixed(1)
+    : null;
+
+  // Danh sách đơn vị có thể nhập
+  const availableUnits = useMemo(() => {
+    const units = new Set<string>();
+    units.add(item.product.base_unit);
+    item.conversions.forEach((c) => {
+      units.add(c.from_unit);
+      units.add(c.to_unit);
+    });
+    return Array.from(units);
+  }, [item.product.base_unit, item.conversions]);
 
   return (
     <div className="p-3 border rounded-lg space-y-2">
@@ -692,8 +808,13 @@ function ReceiptItemRow({ item, onUpdate, onRemove, formatPrice }: ReceiptItemRo
         <div className="min-w-0 flex-1">
           <p className="font-medium text-sm truncate">{item.product.name}</p>
           <p className="text-xs text-muted-foreground">
-            {item.product.brand} · {item.product.specification} · {item.product.base_unit}
+            {item.product.brand} · {item.product.specification}
           </p>
+          {item.supplier_price > 0 && (
+            <p className="text-xs text-blue-600 mt-0.5">
+              Giá NCC: {formatPrice(item.supplier_price)}/{item.product.base_unit}
+            </p>
+          )}
         </div>
         <Button
           variant="ghost"
@@ -705,27 +826,34 @@ function ReceiptItemRow({ item, onUpdate, onRemove, formatPrice }: ReceiptItemRo
         </Button>
       </div>
 
-      {/* Quantity, Unit Cost, Ordered Qty */}
+      {/* Row 1: Đơn vị + Số lượng + SL đặt */}
       <div className="grid grid-cols-3 gap-2">
+        <div>
+          <Label className="text-xs">Đơn vị nhập</Label>
+          {availableUnits.length > 1 ? (
+            <select
+              value={item.unit}
+              onChange={(e) => onUpdate(item.id, 'unit', e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-background px-2 py-1 text-sm mt-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {availableUnits.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          ) : (
+            <p className="h-9 flex items-center text-sm mt-1 px-2 border border-input rounded-md bg-muted/30">
+              {item.product.base_unit}
+            </p>
+          )}
+        </div>
         <div>
           <Label className="text-xs">SL thực nhận</Label>
           <Input
             type="number"
             min={0.01}
             step="any"
-            value={item.quantity}
+            value={item.quantity || ''}
             onChange={(e) => onUpdate(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-            className="h-9 mt-1"
-          />
-        </div>
-        <div>
-          <Label className="text-xs">Đơn giá nhập (đ)</Label>
-          <Input
-            type="number"
-            min={0}
-            step="any"
-            value={item.unit_cost}
-            onChange={(e) => onUpdate(item.id, 'unit_cost', parseFloat(e.target.value) || 0)}
             className="h-9 mt-1"
           />
         </div>
@@ -745,7 +873,51 @@ function ReceiptItemRow({ item, onUpdate, onRemove, formatPrice }: ReceiptItemRo
         </div>
       </div>
 
-      {/* Line total + comparison */}
+      {/* Row 2: Chiết khấu + Thanh toán */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="col-span-1">
+          <Label className="text-xs">Chiết khấu</Label>
+          <div className="flex gap-1 mt-1">
+            <Input
+              type="number"
+              min={0}
+              step="any"
+              value={item.discount_value || ''}
+              onChange={(e) => onUpdate(item.id, 'discount_value', parseFloat(e.target.value) || 0)}
+              placeholder="0"
+              className="h-9 flex-1"
+            />
+            <select
+              value={item.discount_type}
+              onChange={(e) => onUpdate(item.id, 'discount_type', e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="percent">%</option>
+              <option value="fixed">đ</option>
+            </select>
+          </div>
+        </div>
+        <div className="col-span-1 sm:col-span-1">
+          <Label className="text-xs">Thanh toán (đ)</Label>
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            value={item.total_payment || ''}
+            onChange={(e) => onUpdate(item.id, 'total_payment', parseFloat(e.target.value) || 0)}
+            placeholder="Nhập số tiền"
+            className="h-9 mt-1"
+          />
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <Label className="text-xs">Giá vốn/sp (tự tính)</Label>
+          <p className="h-9 flex items-center text-sm mt-1 px-2 border border-input rounded-md bg-muted/30 font-semibold text-primary">
+            {item.unit_cost > 0 ? formatPrice(item.unit_cost) : '—'}
+          </p>
+        </div>
+      </div>
+
+      {/* Summary row */}
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-2">
           {hasOrderedQty && (
@@ -760,9 +932,19 @@ function ReceiptItemRow({ item, onUpdate, onRemove, formatPrice }: ReceiptItemRo
                 : `Thiếu ${Math.abs(qtyDiff)}`}
             </Badge>
           )}
+          {convertedQty !== null && (
+            <span className="text-xs text-muted-foreground">
+              = {convertedQty.toLocaleString('vi-VN')} {item.product.base_unit}
+            </span>
+          )}
+          {actualDiscountPercent && (
+            <span className="text-xs text-green-600">
+              CK thực tế: {actualDiscountPercent}%
+            </span>
+          )}
         </div>
         <span className="text-sm font-semibold text-primary">
-          {formatPrice(lineTotal)}
+          {item.total_payment > 0 ? formatPrice(item.total_payment) : '—'}
         </span>
       </div>
     </div>
