@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { ShoppingCart, Minus, Plus, Trash2, Banknote, Building, Percent, Hash } from 'lucide-react';
+import { ShoppingCart, Minus, Plus, Trash2, Banknote, Building, Percent, Hash, Wrench } from 'lucide-react';
 import { ProductSearch } from '@/components/shared/ProductSearch';
 import {
   usePOSStore,
@@ -32,6 +32,7 @@ export default function POSPage() {
     discountValue,
     paymentMethod,
     isCredit,
+    priceMode,
     isSubmitting,
     lastOrderResult,
     error,
@@ -42,6 +43,7 @@ export default function POSPage() {
     setCustomer,
     setPaymentMethod,
     setIsCredit,
+    setPriceMode,
     clearCart,
     submitOrder,
     clearError,
@@ -89,7 +91,8 @@ export default function POSPage() {
 
     if (!conversions || conversions.length === 0) {
       // No conversions → add directly with base_unit
-      addItem(product, 1, product.base_unit);
+      const trade = product.trade_price ?? null;
+      addItem(product, 1, product.base_unit, trade);
     } else {
       // Show unit selection
       setPendingProduct(product);
@@ -125,15 +128,36 @@ export default function POSPage() {
     }
   }, []);
 
+  /**
+   * Tính giá SỈ (thợ/thầu) theo đơn vị được chọn.
+   * Giá sỉ gốc lưu ở đơn vị cơ bản (product.trade_price); khi bán theo đơn vị
+   * quy đổi thì nhân theo tỷ lệ. Trả về null nếu sản phẩm không có giá sỉ.
+   */
+  const getTradeUnitPrice = useCallback(
+    (product: Product, unit: string, conversions: UnitConversion[]): number | null => {
+      const base = product.trade_price;
+      if (base == null || base <= 0) return null;
+      if (unit === product.base_unit) return base;
+      try {
+        const rateToBase = convertUnit(1, unit, product.base_unit, conversions);
+        return base * rateToBase;
+      } catch {
+        return base;
+      }
+    },
+    []
+  );
+
   /** Xác nhận thêm sản phẩm với đơn vị đã chọn */
   const handleConfirmAddItem = useCallback(() => {
     if (!pendingProduct) return;
     const unitPrice = getUnitPrice(pendingProduct, selectedUnit, productConversions);
+    const tradeUnitPrice = getTradeUnitPrice(pendingProduct, selectedUnit, productConversions);
     // Override selling_price with calculated unit price
-    addItem({ ...pendingProduct, selling_price: unitPrice }, addQuantity, selectedUnit);
+    addItem({ ...pendingProduct, selling_price: unitPrice }, addQuantity, selectedUnit, tradeUnitPrice);
     setPendingProduct(null);
     setProductConversions([]);
-  }, [pendingProduct, selectedUnit, addQuantity, productConversions, addItem, getUnitPrice]);
+  }, [pendingProduct, selectedUnit, addQuantity, productConversions, addItem, getUnitPrice, getTradeUnitPrice]);
 
   /** Đóng modal chọn đơn vị */
   const handleCancelUnitSelection = useCallback(() => {
@@ -264,8 +288,13 @@ export default function POSPage() {
                             )}
                           </div>
                         )}
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
                           <span className="font-mono">{formatPrice(item.unit_price)}</span>/{item.unit}
+                          {priceMode === 'trade' && item.trade_price != null && item.trade_price > 0 && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
+                              <Wrench className="h-2.5 w-2.5" /> Giá sỉ
+                            </span>
+                          )}
                         </p>
                       </div>
                       <button
@@ -327,9 +356,13 @@ export default function POSPage() {
             <button
               onClick={handleSubmitOrder}
               disabled={isSubmitting}
-              className="w-full h-12 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className={`w-full h-12 rounded-lg text-white text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer ${
+                priceMode === 'trade' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'
+              }`}
             >
-              {isSubmitting ? 'Đang xử lý...' : `Thanh toán ${formatPrice(total)}`}
+              {isSubmitting
+                ? 'Đang xử lý...'
+                : `${priceMode === 'trade' ? 'Thanh toán giá sỉ' : 'Thanh toán'} ${formatPrice(total)}`}
             </button>
           </div>
         )}
@@ -338,6 +371,40 @@ export default function POSPage() {
       {/* === Right Panel: Payment (Desktop only) === */}
       <div className="hidden lg:flex lg:w-[380px] xl:w-[420px] flex-col bg-white overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Price mode: 2 nút rõ ràng Giá lẻ / Thợ-Thầu */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mức giá</label>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button
+                onClick={() => setPriceMode('retail')}
+                aria-pressed={priceMode === 'retail'}
+                className={`h-11 rounded-lg border text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  priceMode === 'retail'
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-border bg-background text-foreground hover:bg-muted'
+                }`}
+              >
+                Giá lẻ
+              </button>
+              <button
+                onClick={() => setPriceMode('trade')}
+                aria-pressed={priceMode === 'trade'}
+                className={`h-11 rounded-lg border text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  priceMode === 'trade'
+                    ? 'border-amber-500 bg-amber-500 text-white'
+                    : 'border-border bg-background text-foreground hover:bg-muted'
+                }`}
+              >
+                <Wrench className="h-3.5 w-3.5" /> Thợ/thầu
+              </button>
+            </div>
+            {priceMode === 'trade' && (
+              <p className="text-xs text-amber-600 mt-1.5">
+                Đang áp giá sỉ. Sản phẩm không có giá sỉ vẫn tính theo giá lẻ.
+              </p>
+            )}
+          </div>
+
           {/* Discount */}
           <div>
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Giảm giá</label>
@@ -436,7 +503,9 @@ export default function POSPage() {
           <button
             onClick={handleSubmitOrder}
             disabled={cartItems.length === 0 || isSubmitting}
-            className="w-full h-14 rounded-lg bg-green-600 text-white text-base font-bold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
+            className={`w-full h-14 rounded-lg text-white text-base font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+              priceMode === 'trade' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'
+            }`}
           >
             {isSubmitting ? (
               <>
@@ -444,7 +513,7 @@ export default function POSPage() {
                 Đang xử lý...
               </>
             ) : (
-              `Thanh toán ${formatPrice(total)}`
+              `${priceMode === 'trade' ? 'Thanh toán giá sỉ' : 'Thanh toán'} ${formatPrice(total)}`
             )}
           </button>
         </div>

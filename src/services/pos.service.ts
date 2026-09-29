@@ -29,6 +29,10 @@ export interface CartItem {
   unit: string;
   unit_price: number;
   line_total: number;
+  /** Giá lẻ ở đơn vị đang bán (dùng khi ở chế độ Khách lẻ) */
+  retail_price: number;
+  /** Giá sỉ/thợ-thầu ở đơn vị đang bán; null nếu sản phẩm không có giá sỉ */
+  trade_price: number | null;
 }
 
 export interface CreateOrderParams {
@@ -76,7 +80,9 @@ export function addItemToCart(
   currentItems: CartItem[],
   product: Pick<Product, 'id' | 'name' | 'selling_price' | 'brand' | 'specification'>,
   quantity: number,
-  unit: string
+  unit: string,
+  /** Giá sỉ ở đơn vị đang bán (đã quy đổi). null/undefined = không có giá sỉ. */
+  tradeUnitPrice?: number | null
 ): CartItem[] {
   if (quantity <= 0) {
     throw new Error('quantity phải là số dương lớn hơn 0');
@@ -114,6 +120,8 @@ export function addItemToCart(
 
   // Add new item
   const lineTotal = calculateLineTotal(quantity, product.selling_price);
+  const tradePrice =
+    tradeUnitPrice != null && tradeUnitPrice > 0 ? tradeUnitPrice : null;
   const newItem: CartItem = {
     id: generateCartItemId(),
     product_id: product.id,
@@ -124,6 +132,8 @@ export function addItemToCart(
     unit,
     unit_price: product.selling_price,
     line_total: lineTotal,
+    retail_price: product.selling_price,
+    trade_price: tradePrice,
   };
 
   return [...currentItems, newItem];

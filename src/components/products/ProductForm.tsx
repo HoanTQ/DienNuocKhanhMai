@@ -48,6 +48,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
     image_url: product?.image_url || '',
     description: product?.description || '',
     selling_price: product?.selling_price || 0,
+    trade_price: product?.trade_price ?? null,
     price_type: product?.price_type || 'fixed',
     min_stock_level: product?.min_stock_level || 0,
     unit_conversions: [],
@@ -163,6 +164,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             image_url: result.data.image_url || null,
             description: result.data.description || null,
             selling_price: result.data.selling_price,
+            trade_price: result.data.trade_price ?? null,
             price_type: result.data.price_type,
             min_stock_level: result.data.min_stock_level,
           })
@@ -205,6 +207,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             image_url: result.data.image_url || null,
             description: result.data.description || null,
             selling_price: result.data.selling_price,
+            trade_price: result.data.trade_price ?? null,
             price_type: result.data.price_type,
             min_stock_level: result.data.min_stock_level,
             current_stock: 0,
@@ -380,7 +383,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="selling_price">
-                Giá bán (VNĐ) <span className="text-destructive">*</span>
+                Giá bán lẻ (VNĐ) <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="selling_price"
@@ -396,18 +399,21 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="price_type">
-                Loại giá <span className="text-destructive">*</span>
-              </Label>
-              <select
-                id="price_type"
-                value={formData.price_type || 'fixed'}
-                onChange={(e) => updateField('price_type', e.target.value)}
-                className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="fixed">Giá cố định</option>
-                <option value="variable">Giá biến động</option>
-              </select>
+              <Label htmlFor="trade_price">Giá thợ/thầu (VNĐ)</Label>
+              <Input
+                id="trade_price"
+                type="number"
+                min="0"
+                value={formData.trade_price ?? ''}
+                onChange={(e) =>
+                  updateField('trade_price', e.target.value === '' ? null : Number(e.target.value))
+                }
+                placeholder="Để trống nếu không có giá sỉ"
+                aria-invalid={!!errors.trade_price}
+              />
+              {errors.trade_price && (
+                <p className="text-sm text-destructive">{errors.trade_price}</p>
+              )}
             </div>
           </div>
 

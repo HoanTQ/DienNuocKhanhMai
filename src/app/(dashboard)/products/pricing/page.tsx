@@ -124,12 +124,12 @@ export default function PricingPage() {
   /**
    * Handle saving updated selling price
    */
-  const handleSavePrice = async (productId: string, newPrice: number, newPriceType: 'fixed' | 'variable') => {
+  const handleSavePrice = async (productId: string, newPrice: number, newTradePrice: number | null) => {
     const { error } = await supabase
       .from('products')
       .update({
         selling_price: newPrice,
-        price_type: newPriceType,
+        trade_price: newTradePrice,
       })
       .eq('id', productId);
 
@@ -141,7 +141,7 @@ export default function PricingPage() {
     setProducts((prev) =>
       prev.map((p) =>
         p.id === productId
-          ? { ...p, selling_price: newPrice, price_type: newPriceType }
+          ? { ...p, selling_price: newPrice, trade_price: newTradePrice }
           : p
       )
     );
@@ -226,17 +226,17 @@ export default function PricingPage() {
           </Card>
           <Card>
             <CardContent className="p-3 md:p-4">
-              <p className="text-xs text-muted-foreground">Giá cố định</p>
+              <p className="text-xs text-muted-foreground">Có giá thợ/thầu</p>
               <p className="text-xl md:text-2xl font-bold">
-                {products.filter((p) => p.price_type === 'fixed').length}
+                {products.filter((p) => p.trade_price != null && p.trade_price > 0).length}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-3 md:p-4">
-              <p className="text-xs text-muted-foreground">Giá biến động</p>
+              <p className="text-xs text-muted-foreground">Chỉ giá lẻ</p>
               <p className="text-xl md:text-2xl font-bold">
-                {products.filter((p) => p.price_type === 'variable').length}
+                {products.filter((p) => p.trade_price == null || p.trade_price <= 0).length}
               </p>
             </CardContent>
           </Card>
@@ -294,7 +294,7 @@ export default function PricingPage() {
                       {isOwner && (
                         <th className="text-right py-3 px-2 font-medium">Biên lợi nhuận</th>
                       )}
-                      <th className="text-center py-3 px-2 font-medium">Loại giá</th>
+                      <th className="text-right py-3 px-2 font-medium">Giá thợ/thầu</th>
                       <th className="text-center py-3 px-2 font-medium">Thao tác</th>
                     </tr>
                   </thead>
@@ -377,12 +377,11 @@ function PricingCardMobile({
               {product.brand} • {product.specification}
             </p>
           </div>
-          <Badge
-            variant={product.price_type === 'fixed' ? 'secondary' : 'warning'}
-            className="shrink-0 text-xs"
-          >
-            {product.price_type === 'fixed' ? 'Cố định' : 'Biến động'}
-          </Badge>
+          {product.trade_price != null && product.trade_price > 0 && (
+            <Badge variant="warning" className="shrink-0 text-xs">
+              Có giá sỉ
+            </Badge>
+          )}
         </div>
 
         <div className={`grid ${isOwner ? 'grid-cols-2' : 'grid-cols-1'} gap-3 mt-3`}>
@@ -502,13 +501,10 @@ function PricingRowDesktop({
           )}
         </td>
       )}
-      <td className="py-3 px-2 text-center">
-        <Badge
-          variant={product.price_type === 'fixed' ? 'secondary' : 'warning'}
-          className="text-xs"
-        >
-          {product.price_type === 'fixed' ? 'Cố định' : 'Biến động'}
-        </Badge>
+      <td className="py-3 px-2 text-right font-medium">
+        {product.trade_price != null && product.trade_price > 0
+          ? formatPrice(product.trade_price)
+          : <span className="text-muted-foreground">—</span>}
       </td>
       <td className="py-3 px-2 text-center">
         <div className="flex items-center justify-center gap-1">

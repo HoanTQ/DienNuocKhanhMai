@@ -68,9 +68,14 @@ export const productCreateSchema = z.object({
   selling_price: z
     .number({ error: 'Giá bán là bắt buộc' })
     .min(0, 'Giá bán không được âm'),
+  trade_price: z
+    .number()
+    .min(0, 'Giá thợ/thầu không được âm')
+    .nullable()
+    .optional(),
   price_type: z.enum(['fixed', 'variable'], {
     error: 'Loại giá là bắt buộc',
-  }),
+  }).default('fixed'),
 
   // Stock
   min_stock_level: z

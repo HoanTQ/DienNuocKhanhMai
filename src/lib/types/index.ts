@@ -6,6 +6,7 @@
 
 export interface Product {
   id: string;
+  sku?: string;
   name: string;
   category_id?: string;
   brand: string;
@@ -15,6 +16,7 @@ export interface Product {
   image_url?: string;
   description?: string;
   selling_price: number;
+  trade_price?: number | null; // Giá sỉ / giá thợ thầu (null = chưa đặt)
   price_type: 'fixed' | 'variable';
   weighted_avg_cost: number;
   last_cost: number;

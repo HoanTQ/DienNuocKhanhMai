@@ -154,6 +154,11 @@ export default function ProductsPage() {
               Quản lý giá
             </Button>
           </Link>
+          <Link href="/products/import">
+            <Button variant="outline" size="lg" className="w-full md:w-auto">
+              Nhập từ Excel
+            </Button>
+          </Link>
           <Link href="/products/new">
             <Button size="lg" className="w-full md:w-auto">
               + Thêm sản phẩm
@@ -309,9 +314,11 @@ function ProductCardMobile({
               {product.brand} • {product.specification}
             </p>
           </div>
-          <Badge variant={product.price_type === 'fixed' ? 'secondary' : 'warning'} className="shrink-0 text-xs">
-            {product.price_type === 'fixed' ? 'Cố định' : 'Biến động'}
-          </Badge>
+          {product.sku && (
+            <Badge variant="secondary" className="shrink-0 text-xs font-mono">
+              {product.sku}
+            </Badge>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 mt-3">
