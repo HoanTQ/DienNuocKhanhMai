@@ -84,16 +84,16 @@ export default function PriceHistoryTimeline({
             <div>
               <p className="text-xs text-muted-foreground">Giá vốn TB (WAC)</p>
               <p className="text-sm font-bold text-orange-600">
-                {product.weighted_avg_cost > 0
-                  ? formatPrice(product.weighted_avg_cost)
+                {(product.weighted_avg_cost ?? 0) > 0
+                  ? formatPrice(product.weighted_avg_cost ?? 0)
                   : '—'}
               </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Giá nhập cuối</p>
               <p className="text-sm font-bold text-blue-600">
-                {product.last_cost > 0
-                  ? formatPrice(product.last_cost)
+                {(product.last_cost ?? 0) > 0
+                  ? formatPrice(product.last_cost ?? 0)
                   : '—'}
               </p>
             </div>

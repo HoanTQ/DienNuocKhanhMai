@@ -65,14 +65,25 @@ export default function PricingPage() {
         setProducts(data as Product[]);
       }
     } else {
-      // Owner: full access to products table
+      // Owner: join product_costs để lấy giá vốn (bảng riêng, chỉ owner đọc được)
       const { data, error } = await supabase
         .from('products')
-        .select('*')
+        .select('*, product_costs(weighted_avg_cost, last_cost)')
         .order('name', { ascending: true });
 
       if (!error && data) {
-        setProducts(data as Product[]);
+        // Làm phẳng product_costs -> weighted_avg_cost / last_cost trên product
+        const flattened = data.map((row) => {
+          const { product_costs, ...product } = row as Record<string, unknown> & {
+            product_costs?: { weighted_avg_cost: number; last_cost: number } | null;
+          };
+          return {
+            ...product,
+            weighted_avg_cost: product_costs?.weighted_avg_cost ?? 0,
+            last_cost: product_costs?.last_cost ?? 0,
+          };
+        });
+        setProducts(flattened as Product[]);
       }
     }
 
@@ -363,8 +374,10 @@ function PricingCardMobile({
   onEditPrice,
   onViewHistory,
 }: PricingItemProps) {
-  const margin = product.weighted_avg_cost > 0
-    ? ((product.selling_price - product.weighted_avg_cost) / product.selling_price * 100).toFixed(1)
+  const wac = product.weighted_avg_cost ?? 0;
+  const lastCost = product.last_cost ?? 0;
+  const margin = wac > 0
+    ? ((product.selling_price - wac) / product.selling_price * 100).toFixed(1)
     : null;
 
   return (
@@ -390,17 +403,13 @@ function PricingCardMobile({
               <div>
                 <p className="text-xs text-muted-foreground">Giá vốn TB (WAC)</p>
                 <p className="text-sm font-semibold text-orange-600">
-                  {product.weighted_avg_cost > 0
-                    ? formatPrice(product.weighted_avg_cost)
-                    : '—'}
+                  {wac > 0 ? formatPrice(wac) : '—'}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Giá nhập cuối</p>
                 <p className="text-sm font-semibold text-blue-600">
-                  {product.last_cost > 0
-                    ? formatPrice(product.last_cost)
-                    : '—'}
+                  {lastCost > 0 ? formatPrice(lastCost) : '—'}
                 </p>
               </div>
             </>
@@ -455,8 +464,10 @@ function PricingRowDesktop({
   onEditPrice,
   onViewHistory,
 }: PricingItemProps) {
-  const margin = product.weighted_avg_cost > 0
-    ? ((product.selling_price - product.weighted_avg_cost) / product.selling_price * 100).toFixed(1)
+  const wac = product.weighted_avg_cost ?? 0;
+  const lastCost = product.last_cost ?? 0;
+  const margin = wac > 0
+    ? ((product.selling_price - wac) / product.selling_price * 100).toFixed(1)
     : null;
 
   return (
@@ -473,16 +484,12 @@ function PricingRowDesktop({
         <>
           <td className="py-3 px-2 text-right">
             <span className="text-orange-600 font-medium">
-              {product.weighted_avg_cost > 0
-                ? formatPrice(product.weighted_avg_cost)
-                : '—'}
+              {wac > 0 ? formatPrice(wac) : '—'}
             </span>
           </td>
           <td className="py-3 px-2 text-right">
             <span className="text-blue-600 font-medium">
-              {product.last_cost > 0
-                ? formatPrice(product.last_cost)
-                : '—'}
+              {lastCost > 0 ? formatPrice(lastCost) : '—'}
             </span>
           </td>
         </>

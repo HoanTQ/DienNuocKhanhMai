@@ -48,13 +48,24 @@ export default function ProductsPage() {
 
     const { data, error } = await supabase
       .from('products')
-      .select('*')
+      .select('*, product_costs(weighted_avg_cost, last_cost)')
       .order('name', { ascending: true });
 
     if (error) {
       console.error('Lỗi tải danh sách sản phẩm:', error.message);
     } else {
-      setProducts(data || []);
+      // Làm phẳng product_costs -> weighted_avg_cost / last_cost (owner join được)
+      const flattened = (data || []).map((row) => {
+        const { product_costs, ...product } = row as Record<string, unknown> & {
+          product_costs?: { weighted_avg_cost: number; last_cost: number } | null;
+        };
+        return {
+          ...product,
+          weighted_avg_cost: product_costs?.weighted_avg_cost ?? 0,
+          last_cost: product_costs?.last_cost ?? 0,
+        };
+      });
+      setProducts(flattened as Product[]);
 
       // Fetch supplier prices (latest per product) — Owner only
       if (data && data.length > 0) {
@@ -299,7 +310,7 @@ function ProductCardMobile({
   isOwner,
   supplierPrice,
 }: ProductItemProps) {
-  const wac = product.weighted_avg_cost;
+  const wac = product.weighted_avg_cost ?? 0;
   const profitPercent = wac > 0
     ? ((product.selling_price - wac) / wac * 100).toFixed(1)
     : null;
@@ -398,7 +409,7 @@ function ProductRowDesktop({
   isOwner,
   supplierPrice,
 }: ProductItemProps) {
-  const wac = product.weighted_avg_cost;
+  const wac = product.weighted_avg_cost ?? 0;
   const profitPercent = wac > 0
     ? ((product.selling_price - wac) / wac * 100).toFixed(1)
     : null;

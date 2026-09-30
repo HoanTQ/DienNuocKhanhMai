@@ -18,11 +18,27 @@ export interface Product {
   selling_price: number;
   trade_price?: number | null; // Giá sỉ / giá thợ thầu (null = chưa đặt)
   price_type: 'fixed' | 'variable';
-  weighted_avg_cost: number;
-  last_cost: number;
+  /**
+   * Giá vốn nằm ở bảng riêng `product_costs` (chỉ owner đọc được qua RLS).
+   * Các field dưới đây là OPTIONAL: chỉ có mặt khi owner join product_costs.
+   * Staff không bao giờ nhận được (dùng products_staff_view).
+   */
+  weighted_avg_cost?: number;
+  last_cost?: number;
   min_stock_level: number;
   current_stock: number;
   created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Giá vốn sản phẩm — bảng riêng, RLS chỉ owner truy cập.
+ * Tách khỏi products để staff không thể đọc dù query trực tiếp.
+ */
+export interface ProductCost {
+  product_id: string;
+  weighted_avg_cost: number;
+  last_cost: number;
   updated_at: string;
 }
 

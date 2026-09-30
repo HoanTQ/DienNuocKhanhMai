@@ -273,6 +273,21 @@ export async function POST(request: Request) {
     }
     inserted++;
 
+    // Ghi giá vốn ban đầu vào product_costs (dòng đã được trigger tạo sẵn với 0,0).
+    // Giá nhập từ file được coi là WAC + last_cost khởi tạo.
+    if (_giaNhap && _giaNhap > 0) {
+      const { error: costErr } = await supabase
+        .from('product_costs')
+        .update({ weighted_avg_cost: _giaNhap, last_cost: _giaNhap })
+        .eq('product_id', newProduct.id);
+      if (costErr) {
+        insertErrors.push({
+          sku: productRow.sku,
+          message: 'Lỗi lưu giá vốn: ' + costErr.message,
+        });
+      }
+    }
+
     // Đơn vị quy đổi: from = ĐVT quy đổi, to = ĐVT cơ bản
     if (conversions.length > 0) {
       const convRows = conversions.map((c, idx) => ({
@@ -346,12 +361,11 @@ function buildInsert(
     selling_price: d.gia_ban_le ?? 0,
     trade_price: d.gia_tho_thau ?? null, // giá sỉ / giá thợ thầu
     price_type: 'fixed' as const,
-    weighted_avg_cost: giaNhap,
-    last_cost: giaNhap,
     current_stock: d.so_luong ?? 0,
     min_stock_level: 0,
     is_active: true,
-    // các field phụ (không thuộc bảng products) — bóc ra trước khi insert
+    // các field phụ (không thuộc bảng products) — bóc ra trước khi insert.
+    // Giá vốn (WAC/last_cost) nằm ở bảng product_costs, cập nhật sau khi tạo product.
     _supplier: d.nha_cung_cap || '',
     _giaNhap: giaNhap,
   };

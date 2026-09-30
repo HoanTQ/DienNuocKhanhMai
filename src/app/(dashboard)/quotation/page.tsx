@@ -224,12 +224,6 @@ export default function QuotationPage() {
             Tạo báo giá cho khách hàng, in hoặc gửi qua tin nhắn
           </p>
         </div>
-        <a
-          href="/reports"
-          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-        >
-          ← Báo cáo Doanh thu
-        </a>
       </div>
 
       {/* Thông tin khách hàng - ẩn khi in */}

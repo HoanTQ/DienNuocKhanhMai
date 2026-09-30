@@ -38,8 +38,9 @@ export default function PriceEditDialog({
    * Calculate profit margin based on WAC
    */
   const getMargin = (): string | null => {
-    if (product.weighted_avg_cost <= 0 || sellingPrice <= 0) return null;
-    const margin = ((sellingPrice - product.weighted_avg_cost) / sellingPrice) * 100;
+    const wac = product.weighted_avg_cost ?? 0;
+    if (wac <= 0 || sellingPrice <= 0) return null;
+    const margin = ((sellingPrice - wac) / sellingPrice) * 100;
     return margin.toFixed(1);
   };
 
@@ -47,8 +48,9 @@ export default function PriceEditDialog({
    * Calculate profit per unit
    */
   const getProfitPerUnit = (): number | null => {
-    if (product.weighted_avg_cost <= 0) return null;
-    return sellingPrice - product.weighted_avg_cost;
+    const wac = product.weighted_avg_cost ?? 0;
+    if (wac <= 0) return null;
+    return sellingPrice - wac;
   };
 
   const margin = getMargin();
@@ -128,16 +130,16 @@ export default function PriceEditDialog({
                 <div>
                   <p className="text-xs text-muted-foreground">Giá vốn TB (WAC)</p>
                   <p className="text-sm font-semibold text-orange-600">
-                    {product.weighted_avg_cost > 0
-                      ? formatPrice(product.weighted_avg_cost)
+                    {(product.weighted_avg_cost ?? 0) > 0
+                      ? formatPrice(product.weighted_avg_cost ?? 0)
                       : '—'}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Giá nhập cuối</p>
                   <p className="text-sm font-semibold text-blue-600">
-                    {product.last_cost > 0
-                      ? formatPrice(product.last_cost)
+                    {(product.last_cost ?? 0) > 0
+                      ? formatPrice(product.last_cost ?? 0)
                       : '—'}
                   </p>
                 </div>

@@ -62,7 +62,7 @@ export default function ProductPriceInfo({ product }: ProductPriceInfoProps) {
   };
 
   // Tính lợi nhuận
-  const wac = product.weighted_avg_cost;
+  const wac = product.weighted_avg_cost ?? 0;
   const sellingPrice = product.selling_price;
   const hasWac = wac > 0;
   const profitAmount = hasWac ? sellingPrice - wac : null;
@@ -128,7 +128,7 @@ export default function ProductPriceInfo({ product }: ProductPriceInfoProps) {
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">Giá nhập GN</span>
           <span className="text-sm font-semibold text-slate-600">
-            {product.last_cost > 0 ? formatPrice(product.last_cost) : '—'}
+            {(product.last_cost ?? 0) > 0 ? formatPrice(product.last_cost ?? 0) : '—'}
           </span>
         </div>
 

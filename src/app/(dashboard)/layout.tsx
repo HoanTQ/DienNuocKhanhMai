@@ -2,12 +2,12 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { logout } from '@/services/auth.service';
+import { createClient } from '@/lib/supabase/client';
 import {
   ShoppingCart,
   Package,
-  ScanBarcode,
   Bell,
   Menu,
   Home,
@@ -44,16 +44,19 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   section?: string;
+  /** true nếu staff được phép thấy/menu này. Mặc định (undefined) = chỉ owner. */
+  staffAllowed?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'sales' },
-  { href: '/reports/quotation', label: 'Báo giá', icon: FileText, section: 'sales' },
-  { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'warehouse' },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'sales', staffAllowed: true },
+  { href: '/quotation', label: 'Báo giá', icon: FileText, section: 'sales', staffAllowed: true },
+  { href: '/price-list', label: 'Bảng giá', icon: ClipboardList, section: 'sales', staffAllowed: true },
+  { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'warehouse', staffAllowed: true },
   { href: '/purchasing/orders', label: 'Đặt hàng NCC', icon: Truck, section: 'warehouse' },
   { href: '/purchasing/receipts', label: 'Nhập kho', icon: Package, section: 'warehouse' },
-  { href: '/delivery', label: 'Giao hàng', icon: Truck, section: 'logistics' },
-  { href: '/returns', label: 'Trả hàng', icon: RotateCcw, section: 'logistics' },
+  { href: '/delivery', label: 'Giao hàng', icon: Truck, section: 'logistics', staffAllowed: true },
+  { href: '/returns', label: 'Trả hàng', icon: RotateCcw, section: 'logistics', staffAllowed: true },
   { href: '/debts', label: 'Công nợ KH', icon: CreditCard, section: 'debt' },
   { href: '/purchasing/debts', label: 'Công nợ NCC', icon: CreditCard, section: 'debt' },
   { href: '/', label: 'Tổng quan', icon: Home, section: 'reports' },
@@ -70,10 +73,10 @@ const navItems: NavItem[] = [
 
 // Bottom tab items for mobile
 const mobileTabItems: NavItem[] = [
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart },
-  { href: '/inventory', label: 'Tồn kho', icon: Package },
-  { href: '/products', label: 'Tra giá', icon: ScanBarcode },
-  { href: '/notifications', label: 'Thông báo', icon: Bell },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, staffAllowed: true },
+  { href: '/inventory', label: 'Tồn kho', icon: Package, staffAllowed: true },
+  { href: '/price-list', label: 'Bảng giá', icon: ClipboardList, staffAllowed: true },
+  { href: '/notifications', label: 'Thông báo', icon: Bell, staffAllowed: true },
 ];
 
 const sectionLabels: Record<string, string> = {
@@ -96,6 +99,33 @@ export default function DashboardLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [role, setRole] = useState<'owner' | 'staff' | null>(null);
+
+  // Lấy role user hiện tại để lọc menu theo quyền.
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      if (active && data) setRole(data.role as 'owner' | 'staff');
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // Lọc menu theo role: staff chỉ thấy item có staffAllowed = true.
+  // Trong khi chưa biết role (null), ẩn hết các item owner-only để tránh nháy menu nhạy cảm.
+  const visibleNavItems = navItems.filter(
+    (item) => role === 'owner' || item.staffAllowed
+  );
+  const visibleMobileTabs = mobileTabItems.filter(
+    (item) => role === 'owner' || item.staffAllowed
+  );
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -109,7 +139,7 @@ export default function DashboardLayout({
     return pathname.startsWith(href);
   };
 
-  const currentPageLabel = navItems.find((item) => isActive(item.href))?.label || 'Tổng quan';
+  const currentPageLabel = visibleNavItems.find((item) => isActive(item.href))?.label || 'Tổng quan';
 
   // Group nav items by section
   const sections = ['sales', 'warehouse', 'logistics', 'debt', 'reports', 'master', 'system'];
@@ -145,7 +175,7 @@ export default function DashboardLayout({
         {/* Sidebar Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2" aria-label="Điều hướng chính">
           {sections.map((section) => {
-            const sectionItems = navItems.filter((item) => item.section === section);
+            const sectionItems = visibleNavItems.filter((item) => item.section === section);
             if (sectionItems.length === 0) return null;
             return (
               <div key={section} className="mb-4">
@@ -245,7 +275,7 @@ export default function DashboardLayout({
         aria-label="Điều hướng nhanh"
       >
         <ul className="flex items-center justify-around h-16">
-          {mobileTabItems.map((item) => {
+          {visibleMobileTabs.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -309,7 +339,7 @@ export default function DashboardLayout({
             {/* Nav items */}
             <nav className="px-3 pb-8">
               {sections.map((section) => {
-                const sectionItems = navItems.filter((item) => item.section === section);
+                const sectionItems = visibleNavItems.filter((item) => item.section === section);
                 if (sectionItems.length === 0) return null;
                 return (
                   <div key={section} className="mb-4">

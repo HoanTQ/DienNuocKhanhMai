@@ -9,6 +9,17 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 
 /**
+ * Lấy giá vốn TB (WAC) từ quan hệ embed product_costs.
+ * PostgREST có thể trả object (1-1) hoặc mảng — chuẩn hóa cả hai.
+ */
+function getWac(product: { product_costs?: unknown }): number {
+  const pc = product.product_costs;
+  if (!pc) return 0;
+  const row = Array.isArray(pc) ? pc[0] : pc;
+  return (row as { weighted_avg_cost?: number } | undefined)?.weighted_avg_cost ?? 0;
+}
+
+/**
  * Trang Báo cáo Tồn kho & Công nợ
  *
  * 1. Báo cáo tồn kho theo nhóm hàng và thương hiệu
@@ -171,7 +182,7 @@ export default function InventoryDebtReportsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from('products')
-      .select('id, current_stock, weighted_avg_cost, category_id, category:categories(name)')
+      .select('id, current_stock, category_id, product_costs(weighted_avg_cost), category:categories(name)')
       .eq('is_active', true)
       .gt('current_stock', 0);
 
@@ -187,7 +198,7 @@ export default function InventoryDebtReportsPage() {
       const cat = product.category as any;
       const categoryId = product.category_id || 'uncategorized';
       const categoryName = cat?.name || 'Chưa phân loại';
-      const stockValue = product.current_stock * product.weighted_avg_cost;
+      const stockValue = product.current_stock * getWac(product);
 
       const existing = categoryMap.get(categoryId);
       if (existing) {
@@ -215,7 +226,7 @@ export default function InventoryDebtReportsPage() {
   const fetchInventoryByBrand = useCallback(async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('id, brand, current_stock, weighted_avg_cost')
+      .select('id, brand, current_stock, product_costs(weighted_avg_cost)')
       .eq('is_active', true)
       .gt('current_stock', 0);
 
@@ -228,7 +239,7 @@ export default function InventoryDebtReportsPage() {
     const brandMap = new Map<string, InventoryByBrand>();
     for (const product of data || []) {
       const brand = product.brand || 'Không rõ';
-      const stockValue = product.current_stock * product.weighted_avg_cost;
+      const stockValue = product.current_stock * getWac(product);
 
       const existing = brandMap.get(brand);
       if (existing) {
@@ -255,7 +266,7 @@ export default function InventoryDebtReportsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from('products')
-      .select('id, name, brand, current_stock, weighted_avg_cost, base_unit, last_stocked_at, category_id, category:categories(name)')
+      .select('id, name, brand, current_stock, base_unit, last_stocked_at, category_id, product_costs(weighted_avg_cost), category:categories(name)')
       .eq('is_active', true)
       .gt('current_stock', 0);
 
@@ -286,8 +297,8 @@ export default function InventoryDebtReportsPage() {
           category_name: cat?.name || 'Chưa phân loại',
           base_unit: product.base_unit,
           current_stock: product.current_stock,
-          weighted_avg_cost: product.weighted_avg_cost,
-          stock_value: product.current_stock * product.weighted_avg_cost,
+          weighted_avg_cost: getWac(product),
+          stock_value: product.current_stock * getWac(product),
           last_stocked_at: product.last_stocked_at,
           days_since_last_stock: daysSinceLastStock,
         });
@@ -311,7 +322,7 @@ export default function InventoryDebtReportsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from('products')
-      .select('id, current_stock, weighted_avg_cost')
+      .select('id, current_stock, product_costs(weighted_avg_cost)')
       .eq('is_active', true)
       .gt('current_stock', 0);
 
@@ -324,7 +335,7 @@ export default function InventoryDebtReportsPage() {
     let totalValue = 0;
     let totalUnits = 0;
     for (const product of data || []) {
-      totalValue += product.current_stock * product.weighted_avg_cost;
+      totalValue += product.current_stock * getWac(product);
       totalUnits += product.current_stock;
     }
 

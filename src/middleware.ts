@@ -7,15 +7,20 @@ import { updateSession } from '@/lib/supabase/middleware'
 const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000
 
 /**
- * Routes mà staff KHÔNG được truy cập.
- * Bao gồm: báo cáo, audit log, quản lý NCC/đặt hàng/nhập hàng, công nợ, cài đặt.
+ * Allow-list: các route DUY NHẤT mà staff được phép truy cập.
+ * Mọi route khác (báo cáo, sản phẩm, NCC, nhập hàng, công nợ, cài đặt, audit...)
+ * đều bị chặn mặc định — an toàn hơn deny-list vì route mới thêm sẽ tự động bị chặn.
+ *
+ * Menu staff: Bán hàng, Báo giá, Bảng giá, Tồn kho, Giao hàng, Trả hàng.
  */
-const STAFF_RESTRICTED_ROUTES = [
-  '/reports',
-  '/audit-log',
-  '/purchasing',
-  '/debts',
-  '/settings',
+const STAFF_ALLOWED_ROUTES = [
+  '/pos',
+  '/quotation',
+  '/price-list',
+  '/inventory',
+  '/delivery',
+  '/returns',
+  '/notifications', // chuông thông báo trên header dùng chung
 ]
 
 /**
@@ -39,7 +44,7 @@ function matchesRoute(pathname: string, routes: string[]): boolean {
  * 1. Gọi updateSession() để refresh Supabase session
  * 2. Kiểm tra user đã đăng nhập chưa (redirect /login nếu chưa)
  * 3. Kiểm tra last_activity - nếu > 8 giờ, đăng xuất và redirect /login
- * 4. Kiểm tra role + path - nếu staff truy cập route bị chặn, redirect /pos
+ * 4. Kiểm tra role + path - staff chỉ được vào STAFF_ALLOWED_ROUTES, còn lại redirect /pos
  * 5. Cập nhật last_activity timestamp
  * 6. Cho phép đăng nhập đồng thời nhiều thiết bị (không enforce single-session)
  */
@@ -100,8 +105,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 4. Kiểm tra phân quyền: staff không được truy cập routes nhạy cảm
-  if (userProfile.role === 'staff' && matchesRoute(pathname, STAFF_RESTRICTED_ROUTES)) {
+  // 4. Kiểm tra phân quyền (allow-list): staff CHỈ được truy cập các route cho phép.
+  //    Bất kỳ route nào không nằm trong STAFF_ALLOWED_ROUTES → redirect /pos.
+  if (userProfile.role === 'staff' && !matchesRoute(pathname, STAFF_ALLOWED_ROUTES)) {
     const url = request.nextUrl.clone()
     url.pathname = '/pos'
     return NextResponse.redirect(url)

@@ -40,10 +40,10 @@ export default function EditProductPage() {
         if (profile) setUserProfile(profile as UserProfile);
       }
 
-      // Fetch product
+      // Fetch product (join product_costs để owner xem giá vốn — RLS chặn staff)
       const { data: productData, error: productError } = await supabase
         .from('products')
-        .select('*')
+        .select('*, product_costs(weighted_avg_cost, last_cost)')
         .eq('id', productId)
         .single();
 
@@ -53,7 +53,15 @@ export default function EditProductPage() {
         return;
       }
 
-      setProduct(productData);
+      // Làm phẳng product_costs -> field trên product
+      const { product_costs, ...rest } = productData as Record<string, unknown> & {
+        product_costs?: { weighted_avg_cost: number; last_cost: number } | null;
+      };
+      setProduct({
+        ...rest,
+        weighted_avg_cost: product_costs?.weighted_avg_cost ?? 0,
+        last_cost: product_costs?.last_cost ?? 0,
+      } as Product);
 
       // Fetch unit conversions
       const { data: convData } = await supabase

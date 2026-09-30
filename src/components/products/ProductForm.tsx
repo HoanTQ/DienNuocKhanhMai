@@ -211,8 +211,8 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             price_type: result.data.price_type,
             min_stock_level: result.data.min_stock_level,
             current_stock: 0,
-            weighted_avg_cost: 0,
-            last_cost: 0,
+            // Giá vốn (weighted_avg_cost/last_cost) nằm ở bảng product_costs,
+            // dòng cost (0,0) được trigger trg_ensure_product_cost_row tự tạo.
           })
           .select('id')
           .single();
