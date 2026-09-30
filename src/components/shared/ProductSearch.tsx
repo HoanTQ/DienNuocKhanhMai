@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { BarcodeScanner } from '@/components/barcode/BarcodeScanner';
+import { cn } from '@/lib/utils';
 import type { Product } from '@/lib/types';
 
 interface ProductSearchProps {
@@ -15,6 +16,8 @@ interface ProductSearchProps {
   placeholder?: string;
   /** Ẩn/hiện nút quét mã vạch */
   showBarcodeScanner?: boolean;
+  /** Hiện nút xổ danh sách để duyệt sản phẩm không cần gõ (mặc định true) */
+  showBrowseButton?: boolean;
 }
 
 /**
@@ -30,13 +33,16 @@ export function ProductSearch({
   onSelectProduct,
   placeholder = 'Tìm sản phẩm (tên, thương hiệu, quy cách)...',
   showBarcodeScanner = true,
+  showBrowseButton = true,
 }: ProductSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isBrowsing, setIsBrowsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const supabase = useRef(createClient());
 
   // Cleanup debounce on unmount
@@ -46,6 +52,18 @@ export function ProductSearch({
         clearTimeout(debounceRef.current);
       }
     };
+  }, []);
+
+  // Đóng dropdown khi click ra ngoài (nhất là khi đang xổ danh sách browse)
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setResults([]);
+        setIsBrowsing(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   /**
@@ -118,6 +136,42 @@ export function ProductSearch({
   }, []);
 
   /**
+   * Xổ danh sách sản phẩm để duyệt (không cần gõ).
+   * Toggle: bấm lần nữa để đóng. Load tối đa 50 sản phẩm mới nhất theo tên.
+   */
+  const toggleBrowse = useCallback(async () => {
+    // Đang mở danh sách browse → đóng lại
+    if (isBrowsing) {
+      setIsBrowsing(false);
+      setResults([]);
+      return;
+    }
+
+    setIsScannerOpen(false);
+    setIsLoading(true);
+    setError(null);
+    setQuery('');
+
+    try {
+      const { data, error: browseError } = await supabase.current
+        .from('products')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+        .limit(50);
+
+      if (browseError) throw browseError;
+      setResults(data || []);
+      setIsBrowsing(true);
+    } catch {
+      setError('Không thể tải danh sách sản phẩm. Vui lòng thử lại.');
+      setResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isBrowsing]);
+
+  /**
    * Tra cứu sản phẩm theo mã vạch.
    * Sử dụng index: idx_products_barcode
    * Target: < 1 giây (Requirement 2.1)
@@ -169,6 +223,7 @@ export function ProductSearch({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setQuery(value);
+      if (isBrowsing) setIsBrowsing(false);
 
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -178,7 +233,7 @@ export function ProductSearch({
         searchProducts(value);
       }, 300);
     },
-    [searchProducts]
+    [searchProducts, isBrowsing]
   );
 
   /** Xử lý khi nhấn Enter (người gõ tay hoặc súng bắn mã vạch gửi Enter) */
@@ -227,8 +282,8 @@ export function ProductSearch({
   };
 
   return (
-    <div className="w-full relative">
-      {/* Search input + barcode button */}
+    <div className="w-full relative" ref={containerRef}>
+      {/* Search input + browse + barcode button */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Input
@@ -250,6 +305,34 @@ export function ProductSearch({
             </div>
           )}
         </div>
+
+        {/* Browse (xổ danh sách) toggle button */}
+        {showBrowseButton && (
+          <Button
+            type="button"
+            variant={isBrowsing ? 'default' : 'outline'}
+            size="icon"
+            className="h-12 w-12 shrink-0"
+            onClick={toggleBrowse}
+            aria-label={isBrowsing ? 'Đóng danh sách' : 'Xem danh sách sản phẩm'}
+            aria-pressed={isBrowsing}
+          >
+            <svg
+              className={cn('w-6 h-6 transition-transform', isBrowsing && 'rotate-180')}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </Button>
+        )}
 
         {/* Barcode scanner toggle button */}
         {showBarcodeScanner && (
@@ -317,6 +400,7 @@ export function ProductSearch({
                   onSelectProduct?.(product);
                   setQuery('');
                   setResults([]);
+                  setIsBrowsing(false);
                 }}
                 aria-label={`Chọn ${product.name} - ${product.specification}`}
               >

@@ -1,13 +1,153 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ProductSearch } from '@/components/shared/ProductSearch';
+import { cn } from '@/lib/utils';
 import type { Product } from '@/lib/types';
+
+interface CustomerOption {
+  id: string;
+  name: string;
+  phone: string | null;
+}
+
+/**
+ * Combobox khách hàng: vừa gõ tên (tự do), vừa có nút xổ danh sách khách đã có.
+ * Chọn từ danh sách sẽ điền cả tên + SĐT. Vẫn cho nhập tay khách mới.
+ */
+function CustomerCombobox({
+  name,
+  phone,
+  onNameChange,
+  onSelectCustomer,
+}: {
+  name: string;
+  phone: string;
+  onNameChange: (v: string) => void;
+  onSelectCustomer: (name: string, phone: string) => void;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+  const [open, setOpen] = useState(false);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  const loadCustomers = useCallback(async () => {
+    if (loaded) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('customers')
+      .select('id, name, phone')
+      .order('name', { ascending: true });
+    if (!error && data) setCustomers(data as CustomerOption[]);
+    setLoaded(true);
+    setLoading(false);
+  }, [supabase, loaded]);
+
+  // Đóng khi click ra ngoài
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const toggleOpen = useCallback(async () => {
+    if (!open) await loadCustomers();
+    setOpen((v) => !v);
+  }, [open, loadCustomers]);
+
+  // Lọc theo tên đang gõ (nếu có)
+  const filtered = useMemo(() => {
+    const q = name.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.phone && c.phone.includes(name.trim()))
+    );
+  }, [customers, name]);
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <div className="relative">
+        <Input
+          id="customer-name"
+          value={name}
+          onChange={(e) => {
+            onNameChange(e.target.value);
+            if (!open) {
+              loadCustomers();
+              setOpen(true);
+            }
+          }}
+          onFocus={() => {
+            loadCustomers();
+            setOpen(true);
+          }}
+          placeholder="Nhập hoặc chọn khách hàng..."
+          className="mt-1 pr-10"
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          onClick={toggleOpen}
+          className="absolute right-2 top-1/2 -translate-y-1/2 mt-0.5 p-1 rounded-md hover:bg-muted transition-colors cursor-pointer"
+          aria-label={open ? 'Đóng danh sách khách hàng' : 'Xem danh sách khách hàng'}
+          aria-expanded={open}
+          tabIndex={-1}
+        >
+          <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        </button>
+      </div>
+
+      {open && (
+        <ul
+          className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-lg shadow-lg max-h-[240px] overflow-y-auto z-50"
+          role="listbox"
+          aria-label="Danh sách khách hàng"
+        >
+          {loading ? (
+            <li className="p-3 text-sm text-muted-foreground text-center">Đang tải...</li>
+          ) : filtered.length === 0 ? (
+            <li className="p-3 text-sm text-muted-foreground text-center">
+              {customers.length === 0 ? 'Chưa có khách hàng nào' : 'Không tìm thấy khách phù hợp'}
+            </li>
+          ) : (
+            filtered.map((c) => (
+              <li key={c.id} role="option" aria-selected={false}>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2.5 hover:bg-accent active:bg-accent/80 transition-colors border-b border-border last:border-b-0 cursor-pointer"
+                  onClick={() => {
+                    onSelectCustomer(c.name, c.phone ?? '');
+                    setOpen(false);
+                  }}
+                >
+                  <p className="text-sm font-medium text-foreground">{c.name}</p>
+                  {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+      {/* Giữ tham chiếu phone để không cảnh báo unused; phone hiển thị ở input riêng */}
+      <input type="hidden" value={phone} readOnly />
+    </div>
+  );
+}
 
 /**
  * Trang Báo giá (Quotation Form)
@@ -237,12 +377,14 @@ export default function QuotationPage() {
               <Label htmlFor="customer-name" className="text-xs text-muted-foreground">
                 Tên khách hàng
               </Label>
-              <Input
-                id="customer-name"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Nhập tên khách hàng..."
-                className="mt-1"
+              <CustomerCombobox
+                name={customerName}
+                phone={customerPhone}
+                onNameChange={setCustomerName}
+                onSelectCustomer={(name, phone) => {
+                  setCustomerName(name);
+                  setCustomerPhone(phone);
+                }}
               />
             </div>
             <div>
