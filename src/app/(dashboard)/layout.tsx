@@ -46,11 +46,13 @@ interface NavItem {
   section?: string;
   /** true nếu staff được phép thấy/menu này. Mặc định (undefined) = chỉ owner. */
   staffAllowed?: boolean;
+  /** true nếu role 'sales' được phép thấy/menu này. Mặc định (undefined) = ẩn với sales. */
+  salesAllowed?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'sales', staffAllowed: true },
-  { href: '/quotation', label: 'Báo giá', icon: FileText, section: 'sales', staffAllowed: true },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'sales', staffAllowed: true, salesAllowed: true },
+  { href: '/quotation', label: 'Báo giá', icon: FileText, section: 'sales', staffAllowed: true, salesAllowed: true },
   { href: '/price-list', label: 'Bảng giá', icon: ClipboardList, section: 'sales', staffAllowed: true },
   { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'warehouse', staffAllowed: true },
   { href: '/purchasing/orders', label: 'Đặt hàng NCC', icon: Truck, section: 'warehouse' },
@@ -73,7 +75,8 @@ const navItems: NavItem[] = [
 
 // Bottom tab items for mobile
 const mobileTabItems: NavItem[] = [
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, staffAllowed: true },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, staffAllowed: true, salesAllowed: true },
+  { href: '/quotation', label: 'Báo giá', icon: FileText, salesAllowed: true },
   { href: '/inventory', label: 'Tồn kho', icon: Package, staffAllowed: true },
   { href: '/price-list', label: 'Bảng giá', icon: ClipboardList, staffAllowed: true },
   { href: '/notifications', label: 'Thông báo', icon: Bell, staffAllowed: true },
@@ -99,7 +102,7 @@ export default function DashboardLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [role, setRole] = useState<'owner' | 'staff' | null>(null);
+  const [role, setRole] = useState<'owner' | 'staff' | 'sales' | null>(null);
 
   // Lấy role user hiện tại để lọc menu theo quyền.
   useEffect(() => {
@@ -113,19 +116,24 @@ export default function DashboardLayout({
         .select('role')
         .eq('id', user.id)
         .single();
-      if (active && data) setRole(data.role as 'owner' | 'staff');
+      if (active && data) setRole(data.role as 'owner' | 'staff' | 'sales');
     })();
     return () => { active = false; };
   }, []);
 
-  // Lọc menu theo role: staff chỉ thấy item có staffAllowed = true.
-  // Trong khi chưa biết role (null), ẩn hết các item owner-only để tránh nháy menu nhạy cảm.
-  const visibleNavItems = navItems.filter(
-    (item) => role === 'owner' || item.staffAllowed
-  );
-  const visibleMobileTabs = mobileTabItems.filter(
-    (item) => role === 'owner' || item.staffAllowed
-  );
+  // Lọc menu theo role:
+  // - owner: thấy tất cả.
+  // - staff: chỉ thấy item có staffAllowed = true.
+  // - sales: chỉ thấy item có salesAllowed = true (Bán hàng, Báo giá).
+  // Trong khi chưa biết role (null), ẩn hết để tránh nháy menu nhạy cảm.
+  const canSee = (item: NavItem) => {
+    if (role === 'owner') return true;
+    if (role === 'staff') return !!item.staffAllowed;
+    if (role === 'sales') return !!item.salesAllowed;
+    return false;
+  };
+  const visibleNavItems = navItems.filter(canSee);
+  const visibleMobileTabs = mobileTabItems.filter(canSee);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);

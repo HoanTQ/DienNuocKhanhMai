@@ -179,9 +179,10 @@ export default function POSPage() {
 
   const handleSubmitOrder = useCallback(async () => {
     const userId = currentUser?.id || 'unknown';
-    const userMaxDiscount = currentUser?.role === 'staff'
-      ? currentUser.max_discount_percent
-      : undefined;
+    const userMaxDiscount =
+      currentUser?.role === 'staff' || currentUser?.role === 'sales'
+        ? currentUser.max_discount_percent
+        : undefined;
     await submitOrder(userId, userMaxDiscount);
   }, [submitOrder, currentUser]);
 

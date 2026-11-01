@@ -905,9 +905,9 @@ function PriceComparison({ suppliers, onBack }: PriceComparisonProps) {
       });
     }
 
-    // Only show products with prices from 2+ suppliers
+    // Show products that have a price from at least 1 supplier
     const comparison = Array.from(productMap.values())
-      .filter((row) => row.prices.length >= 2)
+      .filter((row) => row.prices.length >= 1)
       .sort((a, b) => a.product_name.localeCompare(b.product_name));
 
     setComparisonData(comparison);
@@ -942,7 +942,7 @@ function PriceComparison({ suppliers, onBack }: PriceComparisonProps) {
         </Button>
         <h1 className="text-xl md:text-2xl font-bold">So sánh giá NCC</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          So sánh giá từ nhiều nhà cung cấp cho cùng sản phẩm
+          Giá chào của nhà cung cấp cho từng sản phẩm (kể cả khi chỉ có 1 NCC)
         </p>
       </div>
 
@@ -964,7 +964,7 @@ function PriceComparison({ suppliers, onBack }: PriceComparisonProps) {
         <Card>
           <CardContent className="p-6 text-center text-muted-foreground">
             {comparisonData.length === 0
-              ? 'Chưa có sản phẩm nào có giá từ 2 NCC trở lên để so sánh'
+              ? 'Chưa có sản phẩm nào được NCC báo giá'
               : 'Không tìm thấy sản phẩm phù hợp'}
           </CardContent>
         </Card>
@@ -972,6 +972,8 @@ function PriceComparison({ suppliers, onBack }: PriceComparisonProps) {
         <div className="space-y-4">
           {filteredData.map((row) => {
             const minPrice = Math.min(...row.prices.map((p) => p.unit_price));
+            // Chỉ đánh dấu "giá tốt nhất" khi có từ 2 NCC trở lên để so sánh
+            const hasMultiple = row.prices.length >= 2;
             return (
               <Card key={row.product_id}>
                 <CardHeader className="pb-2">
@@ -990,21 +992,21 @@ function PriceComparison({ suppliers, onBack }: PriceComparisonProps) {
                         <div
                           key={price.supplier_id}
                           className={`flex items-center justify-between p-2 rounded-md ${
-                            price.unit_price === minPrice
+                            hasMultiple && price.unit_price === minPrice
                               ? 'bg-green-50 border border-green-200'
                               : 'bg-muted/30'
                           }`}
                         >
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium">{price.supplier_name}</span>
-                            {price.unit_price === minPrice && (
+                            {hasMultiple && price.unit_price === minPrice && (
                               <Badge variant="success" className="text-xs">
                                 Giá tốt nhất
                               </Badge>
                             )}
                           </div>
                           <span className={`text-sm font-semibold ${
-                            price.unit_price === minPrice ? 'text-green-700' : ''
+                            hasMultiple && price.unit_price === minPrice ? 'text-green-700' : ''
                           }`}>
                             {formatPrice(price.unit_price)}
                           </span>

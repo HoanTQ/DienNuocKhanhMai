@@ -296,7 +296,7 @@ export interface UserProfile {
   id: string;
   phone: string;
   full_name: string;
-  role: 'owner' | 'staff';
+  role: 'owner' | 'staff' | 'sales';
   max_discount_percent?: number; // Giới hạn giảm giá cho staff
   is_active: boolean;
   created_at: string;

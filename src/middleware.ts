@@ -24,6 +24,18 @@ const STAFF_ALLOWED_ROUTES = [
 ]
 
 /**
+ * Allow-list: các route DUY NHẤT mà role 'sales' được phép truy cập.
+ * Sales chỉ được dùng Bán hàng và Báo giá, mọi route khác → redirect /pos.
+ *
+ * Menu sales: Bán hàng, Báo giá.
+ */
+const SALES_ALLOWED_ROUTES = [
+  '/pos',
+  '/quotation',
+  '/notifications', // chuông thông báo trên header dùng chung
+]
+
+/**
  * Routes công khai không cần xác thực.
  */
 const PUBLIC_ROUTES = ['/login', '/auth']
@@ -44,7 +56,7 @@ function matchesRoute(pathname: string, routes: string[]): boolean {
  * 1. Gọi updateSession() để refresh Supabase session
  * 2. Kiểm tra user đã đăng nhập chưa (redirect /login nếu chưa)
  * 3. Kiểm tra last_activity - nếu > 8 giờ, đăng xuất và redirect /login
- * 4. Kiểm tra role + path - staff chỉ được vào STAFF_ALLOWED_ROUTES, còn lại redirect /pos
+ * 4. Kiểm tra role + path - staff/sales chỉ được vào allow-list tương ứng, còn lại redirect /pos
  * 5. Cập nhật last_activity timestamp
  * 6. Cho phép đăng nhập đồng thời nhiều thiết bị (không enforce single-session)
  */
@@ -105,9 +117,15 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 4. Kiểm tra phân quyền (allow-list): staff CHỈ được truy cập các route cho phép.
-  //    Bất kỳ route nào không nằm trong STAFF_ALLOWED_ROUTES → redirect /pos.
+  // 4. Kiểm tra phân quyền (allow-list): staff/sales CHỈ được truy cập các route cho phép.
+  //    Bất kỳ route nào không nằm trong allow-list tương ứng → redirect /pos.
   if (userProfile.role === 'staff' && !matchesRoute(pathname, STAFF_ALLOWED_ROUTES)) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/pos'
+    return NextResponse.redirect(url)
+  }
+
+  if (userProfile.role === 'sales' && !matchesRoute(pathname, SALES_ALLOWED_ROUTES)) {
     const url = request.nextUrl.clone()
     url.pathname = '/pos'
     return NextResponse.redirect(url)
