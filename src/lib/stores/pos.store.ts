@@ -15,6 +15,17 @@ import {
 
 export type DiscountType = 'fixed' | 'percentage';
 export type PaymentMethod = 'cash' | 'transfer';
+/** Chế độ giá áp cho cả đơn: 'retail' = khách lẻ, 'trade' = thợ/thầu (giá sỉ) */
+export type PriceMode = 'retail' | 'trade';
+
+/** Tính lại unit_price + line_total của toàn giỏ theo chế độ giá. */
+function repriceCart(items: CartItem[], mode: PriceMode): CartItem[] {
+  return items.map((item) => {
+    const useTrade = mode === 'trade' && item.trade_price != null && item.trade_price > 0;
+    const unitPrice = useTrade ? (item.trade_price as number) : item.retail_price;
+    return { ...item, unit_price: unitPrice, line_total: item.quantity * unitPrice };
+  });
+}
 
 export interface POSState {
   // Cart
@@ -27,6 +38,8 @@ export interface POSState {
   // Payment
   paymentMethod: PaymentMethod;
   isCredit: boolean;
+  // Chế độ giá cho cả đơn (khách lẻ / thợ-thầu)
+  priceMode: PriceMode;
   // UI state
   isSubmitting: boolean;
   lastOrderResult: CreateOrderResult | null;
@@ -34,7 +47,13 @@ export interface POSState {
 }
 
 export interface POSActions {
-  addItem: (product: Pick<Product, 'id' | 'name' | 'selling_price'>, quantity: number, unit: string) => void;
+  addItem: (
+    product: Pick<Product, 'id' | 'name' | 'selling_price'>,
+    quantity: number,
+    unit: string,
+    tradeUnitPrice?: number | null
+  ) => void;
+  setPriceMode: (mode: PriceMode) => void;
   removeItem: (itemId: string) => void;
   updateItemQuantity: (itemId: string, quantity: number) => void;
   setDiscount: (type: DiscountType, value: number) => void;
@@ -85,6 +104,7 @@ const initialState: POSState = {
   discountValue: 0,
   paymentMethod: 'cash',
   isCredit: false,
+  priceMode: 'retail',
   isSubmitting: false,
   lastOrderResult: null,
   error: null,
@@ -93,13 +113,19 @@ const initialState: POSState = {
 export const usePOSStore = create<POSStore>((set, get) => ({
   ...initialState,
 
-  addItem: (product, quantity, unit) => {
+  addItem: (product, quantity, unit, tradeUnitPrice) => {
     try {
-      const newItems = addItemToCart(get().cartItems, product, quantity, unit);
+      const added = addItemToCart(get().cartItems, product, quantity, unit, tradeUnitPrice);
+      // Áp lại giá theo chế độ hiện tại (để món mới hiển thị đúng giá lẻ/sỉ)
+      const newItems = repriceCart(added, get().priceMode);
       set({ cartItems: newItems, error: null });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Lỗi thêm sản phẩm' });
     }
+  },
+
+  setPriceMode: (mode) => {
+    set({ priceMode: mode, cartItems: repriceCart(get().cartItems, mode), error: null });
   },
 
   removeItem: (itemId) => {

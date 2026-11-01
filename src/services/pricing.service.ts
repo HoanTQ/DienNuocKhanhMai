@@ -201,3 +201,103 @@ export function calculateLineTotal(
 
   return quantity * unitPrice;
 }
+
+// ============================================================
+// PRICE MANAGEMENT — Quản lý Giá nâng cao
+// ============================================================
+
+/**
+ * Tính giá vốn trên mỗi đơn vị sản phẩm từ tổng thanh toán.
+ *
+ * Công thức: unit_price = total_payment / quantity
+ * Kết quả làm tròn 2 chữ số thập phân.
+ *
+ * @param totalPayment Tổng tiền thanh toán sau chiết khấu (phải >= 0)
+ * @param quantity Số lượng sản phẩm (phải > 0)
+ * @returns Giá vốn trên mỗi đơn vị (làm tròn 2 decimal)
+ * @throws Error nếu inputs không hợp lệ
+ *
+ * Validates: Price Management Requirements 2.1, 2.5
+ */
+export function calculateUnitPriceFromPayment(
+  totalPayment: number,
+  quantity: number
+): number {
+  if (quantity <= 0) {
+    throw new Error('Số lượng phải lớn hơn 0');
+  }
+  if (totalPayment < 0) {
+    throw new Error('Tổng thanh toán không được là số âm');
+  }
+
+  const unitPrice = totalPayment / quantity;
+  return Math.round(unitPrice * 100) / 100;
+}
+
+/**
+ * Tính tổng thanh toán sau chiết khấu cho một dòng sản phẩm nhập kho.
+ *
+ * - 'percent': payment = subtotal × (1 - discountValue / 100)
+ * - 'fixed': payment = subtotal - discountValue
+ *
+ * Kết quả làm tròn 2 chữ số thập phân.
+ *
+ * @param subtotal Thành tiền trước CK (Số lượng × Giá NCC)
+ * @param discountType Loại chiết khấu: 'percent' hoặc 'fixed'
+ * @param discountValue Giá trị chiết khấu (VD: 5 cho 5%, hoặc 370000 cho CK cố định)
+ * @returns Tổng thanh toán sau CK (làm tròn 2 decimal)
+ * @throws Error nếu inputs không hợp lệ
+ *
+ * Validates: Price Management Requirements 1.1, 1.2, 1.3
+ */
+export function calculatePaymentAfterDiscount(
+  subtotal: number,
+  discountType: 'percent' | 'fixed',
+  discountValue: number
+): number {
+  if (subtotal < 0) {
+    throw new Error('Thành tiền không được là số âm');
+  }
+  if (discountValue < 0) {
+    throw new Error('Chiết khấu không được là số âm');
+  }
+
+  if (discountType === 'percent') {
+    if (discountValue > 100) {
+      throw new Error('Chiết khấu phần trăm không được vượt quá 100%');
+    }
+    const payment = subtotal * (1 - discountValue / 100);
+    return Math.round(payment * 100) / 100;
+  } else {
+    // fixed
+    if (discountValue > subtotal) {
+      throw new Error('Chiết khấu cố định không được lớn hơn thành tiền');
+    }
+    const payment = subtotal - discountValue;
+    return Math.round(payment * 100) / 100;
+  }
+}
+
+/**
+ * Tính phần trăm chiết khấu thực tế dựa trên Giá NCC và Thanh toán.
+ * Dùng để hiển thị % CK thực tế khi user nhập Thanh toán trực tiếp.
+ *
+ * Công thức: discount% = (1 - totalPayment / subtotal) × 100
+ *
+ * @param subtotal Thành tiền (Số lượng × Giá NCC)
+ * @param totalPayment Tổng thanh toán thực tế
+ * @returns Phần trăm chiết khấu (làm tròn 1 decimal)
+ *
+ * Validates: Price Management Requirements 4.3
+ */
+export function calculateActualDiscountPercent(
+  subtotal: number,
+  totalPayment: number
+): number {
+  if (subtotal <= 0) return 0;
+  if (totalPayment < 0) return 0;
+  if (totalPayment >= subtotal) return 0;
+
+  const percent = (1 - totalPayment / subtotal) * 100;
+  return Math.round(percent * 10) / 10;
+}

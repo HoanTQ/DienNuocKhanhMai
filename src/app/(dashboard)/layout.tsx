@@ -2,12 +2,12 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { logout } from '@/services/auth.service';
+import { createClient } from '@/lib/supabase/client';
 import {
   ShoppingCart,
   Package,
-  ScanBarcode,
   Bell,
   Menu,
   Home,
@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   Building2,
   X,
+  Ruler,
 } from 'lucide-react';
 import { NotificationBell } from '@/components/shared/NotificationBell';
 import { cn } from '@/lib/utils';
@@ -43,22 +44,30 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   section?: string;
+  /** true nếu staff được phép thấy/menu này. Mặc định (undefined) = chỉ owner. */
+  staffAllowed?: boolean;
+  /** true nếu role 'sales' được phép thấy/menu này. Mặc định (undefined) = ẩn với sales. */
+  salesAllowed?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { href: '/', label: 'Tổng quan', icon: Home, section: 'main' },
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'main' },
-  { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'main' },
-  { href: '/products', label: 'Sản phẩm', icon: ClipboardList, section: 'main' },
-  { href: '/customers', label: 'Khách hàng', icon: Users, section: 'main' },
-  { href: '/debts', label: 'Công nợ', icon: CreditCard, section: 'finance' },
-  { href: '/purchasing/orders', label: 'Đặt hàng', icon: Truck, section: 'finance' },
-  { href: '/purchasing/receipts', label: 'Nhập kho', icon: Package, section: 'finance' },
-  { href: '/purchasing/suppliers', label: 'Nhà cung cấp', icon: Building2, section: 'finance' },
-  { href: '/returns', label: 'Trả hàng', icon: RotateCcw, section: 'operations' },
-  { href: '/delivery', label: 'Giao hàng', icon: Truck, section: 'operations' },
-  { href: '/reports', label: 'Báo cáo', icon: BarChart3, section: 'operations' },
-  { href: '/reports/quotation', label: 'Báo giá', icon: FileText, section: 'operations' },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, section: 'sales', staffAllowed: true, salesAllowed: true },
+  { href: '/quotation', label: 'Báo giá', icon: FileText, section: 'sales', staffAllowed: true, salesAllowed: true },
+  { href: '/price-list', label: 'Bảng giá', icon: ClipboardList, section: 'sales', staffAllowed: true },
+  { href: '/inventory', label: 'Tồn kho', icon: Package, section: 'warehouse', staffAllowed: true },
+  { href: '/purchasing/orders', label: 'Đặt hàng NCC', icon: Truck, section: 'warehouse' },
+  { href: '/purchasing/receipts', label: 'Nhập kho', icon: Package, section: 'warehouse' },
+  { href: '/delivery', label: 'Giao hàng', icon: Truck, section: 'logistics', staffAllowed: true },
+  { href: '/returns', label: 'Trả hàng', icon: RotateCcw, section: 'logistics', staffAllowed: true },
+  { href: '/debts', label: 'Công nợ KH', icon: CreditCard, section: 'debt' },
+  { href: '/purchasing/debts', label: 'Công nợ NCC', icon: CreditCard, section: 'debt' },
+  { href: '/', label: 'Tổng quan', icon: Home, section: 'reports' },
+  { href: '/reports', label: 'Báo cáo', icon: BarChart3, section: 'reports' },
+  { href: '/products', label: 'Sản phẩm', icon: ClipboardList, section: 'master' },
+  { href: '/customers', label: 'Khách hàng', icon: Users, section: 'master' },
+  { href: '/purchasing/suppliers', label: 'Nhà cung cấp', icon: Building2, section: 'master' },
+  { href: '/delivery#transporters', label: 'Người vận chuyển', icon: Truck, section: 'master' },
+  { href: '/settings/units', label: 'Đơn vị tính', icon: Ruler, section: 'master' },
   { href: '/notifications', label: 'Thông báo', icon: Bell, section: 'system' },
   { href: '/audit-log', label: 'Nhật ký', icon: ClipboardList, section: 'system' },
   { href: '/settings', label: 'Cài đặt', icon: Settings, section: 'system' },
@@ -66,16 +75,20 @@ const navItems: NavItem[] = [
 
 // Bottom tab items for mobile
 const mobileTabItems: NavItem[] = [
-  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart },
-  { href: '/inventory', label: 'Tồn kho', icon: Package },
-  { href: '/products', label: 'Tra giá', icon: ScanBarcode },
-  { href: '/notifications', label: 'Thông báo', icon: Bell },
+  { href: '/pos', label: 'Bán hàng', icon: ShoppingCart, staffAllowed: true, salesAllowed: true },
+  { href: '/quotation', label: 'Báo giá', icon: FileText, salesAllowed: true },
+  { href: '/inventory', label: 'Tồn kho', icon: Package, staffAllowed: true },
+  { href: '/price-list', label: 'Bảng giá', icon: ClipboardList, staffAllowed: true },
+  { href: '/notifications', label: 'Thông báo', icon: Bell, staffAllowed: true },
 ];
 
 const sectionLabels: Record<string, string> = {
-  main: 'Chính',
-  finance: 'Tài chính',
-  operations: 'Vận hành',
+  sales: 'Bán hàng',
+  warehouse: 'Kho hàng',
+  logistics: 'Giao hàng & Trả hàng',
+  debt: 'Công nợ',
+  reports: 'Báo cáo',
+  master: 'Danh mục chung',
   system: 'Hệ thống',
 };
 
@@ -89,6 +102,38 @@ export default function DashboardLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [role, setRole] = useState<'owner' | 'staff' | 'sales' | null>(null);
+
+  // Lấy role user hiện tại để lọc menu theo quyền.
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      if (active && data) setRole(data.role as 'owner' | 'staff' | 'sales');
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // Lọc menu theo role:
+  // - owner: thấy tất cả.
+  // - staff: chỉ thấy item có staffAllowed = true.
+  // - sales: chỉ thấy item có salesAllowed = true (Bán hàng, Báo giá).
+  // Trong khi chưa biết role (null), ẩn hết để tránh nháy menu nhạy cảm.
+  const canSee = (item: NavItem) => {
+    if (role === 'owner') return true;
+    if (role === 'staff') return !!item.staffAllowed;
+    if (role === 'sales') return !!item.salesAllowed;
+    return false;
+  };
+  const visibleNavItems = navItems.filter(canSee);
+  const visibleMobileTabs = mobileTabItems.filter(canSee);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -102,10 +147,10 @@ export default function DashboardLayout({
     return pathname.startsWith(href);
   };
 
-  const currentPageLabel = navItems.find((item) => isActive(item.href))?.label || 'Tổng quan';
+  const currentPageLabel = visibleNavItems.find((item) => isActive(item.href))?.label || 'Tổng quan';
 
   // Group nav items by section
-  const sections = ['main', 'finance', 'operations', 'system'];
+  const sections = ['sales', 'warehouse', 'logistics', 'debt', 'reports', 'master', 'system'];
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
@@ -138,7 +183,7 @@ export default function DashboardLayout({
         {/* Sidebar Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2" aria-label="Điều hướng chính">
           {sections.map((section) => {
-            const sectionItems = navItems.filter((item) => item.section === section);
+            const sectionItems = visibleNavItems.filter((item) => item.section === section);
             if (sectionItems.length === 0) return null;
             return (
               <div key={section} className="mb-4">
@@ -238,7 +283,7 @@ export default function DashboardLayout({
         aria-label="Điều hướng nhanh"
       >
         <ul className="flex items-center justify-around h-16">
-          {mobileTabItems.map((item) => {
+          {visibleMobileTabs.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -302,7 +347,7 @@ export default function DashboardLayout({
             {/* Nav items */}
             <nav className="px-3 pb-8">
               {sections.map((section) => {
-                const sectionItems = navItems.filter((item) => item.section === section);
+                const sectionItems = visibleNavItems.filter((item) => item.section === section);
                 if (sectionItems.length === 0) return null;
                 return (
                   <div key={section} className="mb-4">

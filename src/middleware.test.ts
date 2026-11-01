@@ -177,22 +177,32 @@ describe('Middleware', () => {
   })
 
   describe('RBAC - Staff route restrictions', () => {
+    // Allow-list: staff CHỈ được vào các route này
+    const allowedRoutes = [
+      '/pos',
+      '/quotation',
+      '/price-list',
+      '/inventory',
+      '/delivery',
+      '/returns',
+      '/notifications',
+    ]
+
+    // Mọi route khác đều bị chặn với staff (mặc định deny)
     const restrictedRoutes = [
       '/reports',
+      '/reports/inventory',
       '/audit-log',
       '/purchasing',
       '/purchasing/suppliers',
       '/purchasing/orders',
+      '/purchasing/receipts',
       '/debts',
       '/settings',
-    ]
-
-    const allowedRoutes = [
-      '/pos',
-      '/inventory',
+      '/settings/units',
       '/products',
+      '/products/pricing',
       '/customers',
-      '/notifications',
     ]
 
     restrictedRoutes.forEach((route) => {

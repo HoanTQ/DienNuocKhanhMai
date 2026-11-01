@@ -1,19 +1,19 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarcodeScanner } from '@/components/barcode/BarcodeScanner';
+import { UnitCombobox } from '@/components/shared/UnitCombobox';
 import {
   productCreateSchema,
   type ProductCreateInput,
   type UnitConversionInput,
-  MAIN_CATEGORIES,
 } from '@/lib/validations/product.schema';
-import type { Category, Product, UnitConversion } from '@/lib/types';
+import type { Product, UnitConversion } from '@/lib/types';
 
 interface ProductFormProps {
   /** Sản phẩm hiện tại (cho edit mode) */
@@ -28,9 +28,8 @@ interface ProductFormProps {
  * Form thêm/sửa sản phẩm
  *
  * Hỗ trợ:
- * - Required fields: name, category, brand, specification, base_unit
+ * - Required fields: name, brand, specification, base_unit
  * - Optional: barcode, image_url, description
- * - Phân loại nhóm chính (Điện, Nước, Sơn) và nhóm phụ
  * - Đơn vị quy đổi tối đa 3 cấp
  *
  * Validates: Requirements 6.1, 6.2, 6.3, 6.4
@@ -39,14 +38,9 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
   const isEdit = !!product;
   const supabase = useMemo(() => createClient(), []);
 
-  // Categories state
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedMainCategory, setSelectedMainCategory] = useState<string>('');
-
   // Form state
   const [formData, setFormData] = useState<Partial<ProductCreateInput>>({
     name: product?.name || '',
-    category_id: product?.category_id || '',
     brand: product?.brand || '',
     specification: product?.specification || '',
     base_unit: product?.base_unit || '',
@@ -54,6 +48,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
     image_url: product?.image_url || '',
     description: product?.description || '',
     selling_price: product?.selling_price || 0,
+    trade_price: product?.trade_price ?? null,
     price_type: product?.price_type || 'fixed',
     min_stock_level: product?.min_stock_level || 0,
     unit_conversions: [],
@@ -65,6 +60,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
       from_unit: c.from_unit,
       to_unit: c.to_unit,
       conversion_rate: c.conversion_rate,
+      selling_price: c.selling_price ?? null,
       level: c.level,
     })) || []
   );
@@ -73,45 +69,6 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  /**
-   * Fetch categories
-   */
-  useEffect(() => {
-    async function fetchCategories() {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name', { ascending: true });
-
-      if (!error && data) {
-        setCategories(data);
-
-        // Set initial main category for edit mode
-        if (product?.category_id) {
-          const cat = data.find((c) => c.id === product.category_id);
-          if (cat) {
-            if (cat.parent_id) {
-              setSelectedMainCategory(cat.parent_id);
-            } else {
-              setSelectedMainCategory(cat.id);
-            }
-          }
-        }
-      }
-    }
-    fetchCategories();
-  }, [supabase, product?.category_id]);
-
-  /**
-   * Nhóm hàng chính (không có parent)
-   */
-  const mainCategories = categories.filter((c) => !c.parent_id);
-
-  /**
-   * Nhóm hàng phụ (có parent = selectedMainCategory)
-   */
-  const subCategories = categories.filter((c) => c.parent_id === selectedMainCategory);
 
   /**
    * Update form field
@@ -136,7 +93,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
     const newLevel = (unitConversions.length + 1) as 1 | 2 | 3;
     setUnitConversions((prev) => [
       ...prev,
-      { from_unit: '', to_unit: formData.base_unit || '', conversion_rate: 1, level: newLevel },
+      { from_unit: '', to_unit: formData.base_unit || '', conversion_rate: 1, selling_price: null, level: newLevel },
     ]);
   };
 
@@ -200,7 +157,6 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
           .from('products')
           .update({
             name: result.data.name,
-            category_id: result.data.category_id,
             brand: result.data.brand,
             specification: result.data.specification,
             base_unit: result.data.base_unit,
@@ -208,6 +164,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             image_url: result.data.image_url || null,
             description: result.data.description || null,
             selling_price: result.data.selling_price,
+            trade_price: result.data.trade_price ?? null,
             price_type: result.data.price_type,
             min_stock_level: result.data.min_stock_level,
           })
@@ -227,6 +184,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             from_unit: c.from_unit,
             to_unit: c.to_unit,
             conversion_rate: Number(c.conversion_rate),
+            selling_price: c.selling_price ? Number(c.selling_price) : null,
             level: c.level,
           }));
 
@@ -242,7 +200,6 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
           .from('products')
           .insert({
             name: result.data.name,
-            category_id: result.data.category_id,
             brand: result.data.brand,
             specification: result.data.specification,
             base_unit: result.data.base_unit,
@@ -250,11 +207,12 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             image_url: result.data.image_url || null,
             description: result.data.description || null,
             selling_price: result.data.selling_price,
+            trade_price: result.data.trade_price ?? null,
             price_type: result.data.price_type,
             min_stock_level: result.data.min_stock_level,
             current_stock: 0,
-            weighted_avg_cost: 0,
-            last_cost: 0,
+            // Giá vốn (weighted_avg_cost/last_cost) nằm ở bảng product_costs,
+            // dòng cost (0,0) được trigger trg_ensure_product_cost_row tự tạo.
           })
           .select('id')
           .single();
@@ -268,6 +226,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             from_unit: c.from_unit,
             to_unit: c.to_unit,
             conversion_rate: Number(c.conversion_rate),
+            selling_price: c.selling_price ? Number(c.selling_price) : null,
             level: c.level,
           }));
 
@@ -353,80 +312,17 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
             <Label htmlFor="base_unit">
               Đơn vị tính cơ bản <span className="text-destructive">*</span>
             </Label>
-            <Input
+            <UnitCombobox
               id="base_unit"
               value={formData.base_unit || ''}
-              onChange={(e) => updateField('base_unit', e.target.value)}
-              placeholder="VD: mét, cái, kg, cuộn"
-              aria-invalid={!!errors.base_unit}
+              onChange={(value) => updateField('base_unit', value)}
+              placeholder="Chọn đơn vị tính..."
+              error={!!errors.base_unit}
             />
             {errors.base_unit && (
               <p className="text-sm text-destructive">{errors.base_unit}</p>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Phân loại nhóm hàng */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Phân loại nhóm hàng</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Nhóm chính */}
-          <div className="space-y-2">
-            <Label htmlFor="main_category">
-              Nhóm chính <span className="text-destructive">*</span>
-            </Label>
-            <select
-              id="main_category"
-              value={selectedMainCategory}
-              onChange={(e) => {
-                setSelectedMainCategory(e.target.value);
-                // Nếu nhóm chính không có nhóm phụ, set category_id = nhóm chính
-                const subs = categories.filter((c) => c.parent_id === e.target.value);
-                if (subs.length === 0) {
-                  updateField('category_id', e.target.value);
-                } else {
-                  updateField('category_id', '');
-                }
-              }}
-              className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Chọn nhóm hàng chính"
-            >
-              <option value="">Chọn nhóm chính ({MAIN_CATEGORIES.join(', ')})</option>
-              {mainCategories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Nhóm phụ (nếu có) */}
-          {subCategories.length > 0 && (
-            <div className="space-y-2">
-              <Label htmlFor="sub_category">Nhóm phụ</Label>
-              <select
-                id="sub_category"
-                value={formData.category_id || ''}
-                onChange={(e) => updateField('category_id', e.target.value)}
-                className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label="Chọn nhóm hàng phụ"
-              >
-                <option value="">Chọn nhóm phụ</option>
-                {subCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {errors.category_id && (
-            <p className="text-sm text-destructive">{errors.category_id}</p>
-          )}
         </CardContent>
       </Card>
 
@@ -487,7 +383,7 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="selling_price">
-                Giá bán (VNĐ) <span className="text-destructive">*</span>
+                Giá bán lẻ (VNĐ) <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="selling_price"
@@ -503,18 +399,21 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="price_type">
-                Loại giá <span className="text-destructive">*</span>
-              </Label>
-              <select
-                id="price_type"
-                value={formData.price_type || 'fixed'}
-                onChange={(e) => updateField('price_type', e.target.value)}
-                className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="fixed">Giá cố định</option>
-                <option value="variable">Giá biến động</option>
-              </select>
+              <Label htmlFor="trade_price">Giá thợ/thầu (VNĐ)</Label>
+              <Input
+                id="trade_price"
+                type="number"
+                min="0"
+                value={formData.trade_price ?? ''}
+                onChange={(e) =>
+                  updateField('trade_price', e.target.value === '' ? null : Number(e.target.value))
+                }
+                placeholder="Để trống nếu không có giá sỉ"
+                aria-invalid={!!errors.trade_price}
+              />
+              {errors.trade_price && (
+                <p className="text-sm text-destructive">{errors.trade_price}</p>
+              )}
             </div>
           </div>
 
@@ -574,16 +473,16 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
                     Xóa
                   </Button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Đơn vị nguồn</Label>
-                    <Input
+                    <UnitCombobox
                       value={conversion.from_unit}
-                      onChange={(e) =>
-                        updateUnitConversion(index, 'from_unit', e.target.value)
+                      onChange={(value) =>
+                        updateUnitConversion(index, 'from_unit', value)
                       }
                       placeholder="VD: cuộn"
-                      className="h-10"
+                      className="[&_input]:h-10"
                     />
                   </div>
                   <div className="space-y-1">
@@ -602,12 +501,27 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Đơn vị đích</Label>
-                    <Input
+                    <UnitCombobox
                       value={conversion.to_unit}
-                      onChange={(e) =>
-                        updateUnitConversion(index, 'to_unit', e.target.value)
+                      onChange={(value) =>
+                        updateUnitConversion(index, 'to_unit', value)
                       }
                       placeholder={formData.base_unit || 'VD: mét'}
+                      className="[&_input]:h-10"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Giá bán riêng (₫)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={conversion.selling_price ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? null : Number(e.target.value);
+                        updateUnitConversion(index, 'selling_price', val as unknown as number);
+                      }}
+                      placeholder="Để trống = tự tính"
                       className="h-10"
                     />
                   </div>
@@ -615,6 +529,17 @@ export default function ProductForm({ product, existingConversions, onSuccess }:
                 <p className="text-xs text-muted-foreground">
                   1 {conversion.from_unit || '?'} = {conversion.conversion_rate}{' '}
                   {conversion.to_unit || '?'}
+                  {conversion.selling_price ? (
+                    <span className="ml-2 text-primary font-medium">
+                      • Giá bán: {Number(conversion.selling_price).toLocaleString('vi-VN')}₫/{conversion.from_unit || '?'}
+                    </span>
+                  ) : (
+                    formData.selling_price ? (
+                      <span className="ml-2">
+                        • Giá tự tính: {(Number(formData.selling_price) * conversion.conversion_rate).toLocaleString('vi-VN')}₫/{conversion.from_unit || '?'}
+                      </span>
+                    ) : null
+                  )}
                 </p>
               </div>
             ))

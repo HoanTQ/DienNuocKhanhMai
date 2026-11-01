@@ -12,7 +12,6 @@ import { productCreateSchema } from '@/lib/validations/product.schema';
 describe('Feature: quan-ly-cua-hang-dien-nuoc, Property 14: Product Validation', () => {
   // Generators for valid field values
   const validName = fc.string({ minLength: 1, maxLength: 255 }).filter((s) => s.trim().length > 0);
-  const validCategoryId = fc.uuid();
   const validBrand = fc.string({ minLength: 1, maxLength: 100 }).filter((s) => s.trim().length > 0);
   const validSpecification = fc.string({ minLength: 1, maxLength: 255 }).filter((s) => s.trim().length > 0);
   const validBaseUnit = fc.string({ minLength: 1, maxLength: 50 }).filter((s) => s.trim().length > 0);
@@ -22,7 +21,6 @@ describe('Feature: quan-ly-cua-hang-dien-nuoc, Property 14: Product Validation',
   // Generator for a complete valid product
   const validProductArb = fc.record({
     name: validName,
-    category_id: validCategoryId,
     brand: validBrand,
     specification: validSpecification,
     base_unit: validBaseUnit,
@@ -31,7 +29,7 @@ describe('Feature: quan-ly-cua-hang-dien-nuoc, Property 14: Product Validation',
     min_stock_level: fc.integer({ min: 0, max: 10000 }),
   });
 
-  const requiredFields = ['name', 'category_id', 'brand', 'specification', 'base_unit'] as const;
+  const requiredFields = ['name', 'brand', 'specification', 'base_unit'] as const;
 
   it('product đủ required fields → safeParse should succeed', () => {
     fc.assert(

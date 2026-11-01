@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { BarcodeScanner } from '@/components/barcode/BarcodeScanner';
+import { cn } from '@/lib/utils';
 import type { Product } from '@/lib/types';
 
 interface ProductSearchProps {
@@ -15,6 +16,8 @@ interface ProductSearchProps {
   placeholder?: string;
   /** Ẩn/hiện nút quét mã vạch */
   showBarcodeScanner?: boolean;
+  /** Hiện nút xổ danh sách để duyệt sản phẩm không cần gõ (mặc định true) */
+  showBrowseButton?: boolean;
 }
 
 /**
@@ -30,13 +33,16 @@ export function ProductSearch({
   onSelectProduct,
   placeholder = 'Tìm sản phẩm (tên, thương hiệu, quy cách)...',
   showBarcodeScanner = true,
+  showBrowseButton = true,
 }: ProductSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isBrowsing, setIsBrowsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const supabase = useRef(createClient());
 
   // Cleanup debounce on unmount
@@ -46,6 +52,18 @@ export function ProductSearch({
         clearTimeout(debounceRef.current);
       }
     };
+  }, []);
+
+  // Đóng dropdown khi click ra ngoài (nhất là khi đang xổ danh sách browse)
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setResults([]);
+        setIsBrowsing(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   /**
@@ -118,6 +136,42 @@ export function ProductSearch({
   }, []);
 
   /**
+   * Xổ danh sách sản phẩm để duyệt (không cần gõ).
+   * Toggle: bấm lần nữa để đóng. Load tối đa 50 sản phẩm mới nhất theo tên.
+   */
+  const toggleBrowse = useCallback(async () => {
+    // Đang mở danh sách browse → đóng lại
+    if (isBrowsing) {
+      setIsBrowsing(false);
+      setResults([]);
+      return;
+    }
+
+    setIsScannerOpen(false);
+    setIsLoading(true);
+    setError(null);
+    setQuery('');
+
+    try {
+      const { data, error: browseError } = await supabase.current
+        .from('products')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+        .limit(50);
+
+      if (browseError) throw browseError;
+      setResults(data || []);
+      setIsBrowsing(true);
+    } catch {
+      setError('Không thể tải danh sách sản phẩm. Vui lòng thử lại.');
+      setResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isBrowsing]);
+
+  /**
    * Tra cứu sản phẩm theo mã vạch.
    * Sử dụng index: idx_products_barcode
    * Target: < 1 giây (Requirement 2.1)
@@ -169,6 +223,7 @@ export function ProductSearch({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setQuery(value);
+      if (isBrowsing) setIsBrowsing(false);
 
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -178,7 +233,7 @@ export function ProductSearch({
         searchProducts(value);
       }, 300);
     },
-    [searchProducts]
+    [searchProducts, isBrowsing]
   );
 
   /** Xử lý khi nhấn Enter (người gõ tay hoặc súng bắn mã vạch gửi Enter) */
@@ -227,8 +282,8 @@ export function ProductSearch({
   };
 
   return (
-    <div className="w-full relative">
-      {/* Search input + barcode button */}
+    <div className="w-full relative" ref={containerRef}>
+      {/* Search input + browse + barcode button */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Input
@@ -250,6 +305,34 @@ export function ProductSearch({
             </div>
           )}
         </div>
+
+        {/* Browse (xổ danh sách) toggle button */}
+        {showBrowseButton && (
+          <Button
+            type="button"
+            variant={isBrowsing ? 'default' : 'outline'}
+            size="icon"
+            className="h-12 w-12 shrink-0"
+            onClick={toggleBrowse}
+            aria-label={isBrowsing ? 'Đóng danh sách' : 'Xem danh sách sản phẩm'}
+            aria-pressed={isBrowsing}
+          >
+            <svg
+              className={cn('w-6 h-6 transition-transform', isBrowsing && 'rotate-180')}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </Button>
+        )}
 
         {/* Barcode scanner toggle button */}
         {showBarcodeScanner && (
@@ -301,10 +384,10 @@ export function ProductSearch({
         </div>
       )}
 
-      {/* Search results - OVERLAY dropdown, max 4 items visible, auto-close on select */}
+      {/* Search results - OVERLAY dropdown, compact rows để hiện nhiều sản phẩm hơn */}
       {results.length > 0 && (
         <ul
-          className="absolute top-full left-0 right-0 mt-2 bg-white border border-border rounded-lg shadow-lg max-h-[220px] overflow-y-auto z-50"
+          className="absolute top-full left-0 right-0 mt-2 bg-white border border-border rounded-lg shadow-lg max-h-[min(460px,calc(100vh-220px))] overflow-y-auto overscroll-contain z-50"
           role="listbox"
           aria-label="Kết quả tìm kiếm sản phẩm"
         >
@@ -312,32 +395,44 @@ export function ProductSearch({
             <li key={product.id} role="option" aria-selected={false}>
               <button
                 type="button"
-                className="w-full text-left p-3 hover:bg-accent active:bg-accent/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring border-b border-border last:border-b-0 cursor-pointer"
+                className="w-full text-left px-3 py-2 hover:bg-accent active:bg-accent/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring border-b border-border last:border-b-0 cursor-pointer"
                 onClick={() => {
                   onSelectProduct?.(product);
                   setQuery('');
                   setResults([]);
+                  setIsBrowsing(false);
                 }}
                 aria-label={`Chọn ${product.name} - ${product.specification}`}
               >
-                {/* Tên sản phẩm + thương hiệu */}
+                {/* Tên sản phẩm + giá */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {product.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {product.brand} · {product.specification}
-                    </p>
-                  </div>
+                  <p className="text-sm font-semibold text-foreground truncate min-w-0 flex-1">
+                    {product.name}
+                  </p>
                   {/* Giá bán */}
                   <span className="text-sm font-semibold font-mono text-success whitespace-nowrap">
                     {formatPrice(product.selling_price)}
                   </span>
                 </div>
 
-                {/* Đơn vị tính + Tồn kho */}
-                <div className="flex items-center gap-2 mt-1.5">
+                {/* Thương hiệu + Quy cách + Đơn vị + Tồn kho — gộp 1 hàng để tiết kiệm chiều cao */}
+                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                  {product.brand && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
+                        <path d="M8.5 2.687a.5.5 0 0 0-1 0v.403a3.251 3.251 0 0 0-2.592 2.175l-.089.267a3.25 3.25 0 0 0 1.164 3.582l.639.466a1.75 1.75 0 0 1 .627 1.93l-.095.286A3.25 3.25 0 0 0 10.23 14.7l.089-.267a3.25 3.25 0 0 0-1.164-3.582l-.639-.466a1.75 1.75 0 0 1-.627-1.93l.095-.286a1.75 1.75 0 0 1 1.396-1.172V5.5h1a.5.5 0 0 0 0-1h-1V2.687Z"/>
+                      </svg>
+                      {product.brand}
+                    </span>
+                  )}
+                  {product.specification && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0" aria-hidden="true">
+                        <path fillRule="evenodd" d="M4.5 2A2.5 2.5 0 0 0 2 4.5v2.879a2.5 2.5 0 0 0 .732 1.767l4.5 4.5a2.5 2.5 0 0 0 3.536 0l2.878-2.878a2.5 2.5 0 0 0 0-3.536l-4.5-4.5A2.5 2.5 0 0 0 7.38 2H4.5ZM5 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd"/>
+                      </svg>
+                      {product.specification}
+                    </span>
+                  )}
                   <Badge variant="secondary" className="text-xs">
                     {product.base_unit}
                   </Badge>

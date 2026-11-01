@@ -11,6 +11,7 @@ beforeEach(() => {
     discountValue: 0,
     paymentMethod: 'cash',
     isCredit: false,
+    priceMode: 'retail',
     isSubmitting: false,
     lastOrderResult: null,
     error: null,
@@ -173,6 +174,51 @@ describe('POS Store', () => {
       expect(state.discountValue).toBe(0);
       expect(state.isCredit).toBe(false);
       expect(state.customer).toBeNull();
+    });
+  });
+
+  describe('setPriceMode (giá lẻ / thợ-thầu)', () => {
+    // product có giá sỉ: bán 45.000 lẻ, 40.000 sỉ ở đơn vị 'mét'
+    const withTrade: Pick<Product, 'id' | 'name' | 'selling_price'> = {
+      id: 'prod-trade',
+      name: 'Ống có giá sỉ',
+      selling_price: 45000,
+    };
+
+    it('switches whole cart to trade price and back', () => {
+      const { addItem, setPriceMode } = usePOSStore.getState();
+      // trade price 40.000 (tham số thứ 4)
+      addItem(withTrade, 2, 'mét', 40000);
+
+      setPriceMode('trade');
+      let items = usePOSStore.getState().cartItems;
+      expect(items[0].unit_price).toBe(40000);
+      expect(items[0].line_total).toBe(80000);
+
+      setPriceMode('retail');
+      items = usePOSStore.getState().cartItems;
+      expect(items[0].unit_price).toBe(45000);
+      expect(items[0].line_total).toBe(90000);
+    });
+
+    it('keeps retail price for items without trade price', () => {
+      const { addItem, setPriceMode } = usePOSStore.getState();
+      addItem(mockProduct, 2, 'mét'); // không truyền trade -> null
+
+      setPriceMode('trade');
+      const items = usePOSStore.getState().cartItems;
+      expect(items[0].trade_price).toBeNull();
+      expect(items[0].unit_price).toBe(45000); // giữ giá lẻ
+      expect(items[0].line_total).toBe(90000);
+    });
+
+    it('applies current mode to newly added item', () => {
+      const { addItem, setPriceMode } = usePOSStore.getState();
+      setPriceMode('trade');
+      addItem(withTrade, 1, 'mét', 40000);
+
+      const items = usePOSStore.getState().cartItems;
+      expect(items[0].unit_price).toBe(40000);
     });
   });
 

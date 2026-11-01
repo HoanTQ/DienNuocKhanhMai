@@ -100,6 +100,8 @@ export default function ReturnsPage() {
     unit: string;
     reason: string;
     created_at: string;
+    receipt_number: string | null;
+    supplier_name: string | null;
   }>>([]);
   const [showDefectiveList, setShowDefectiveList] = useState(false);
 
@@ -117,6 +119,50 @@ export default function ReturnsPage() {
     setSubmitError(null);
 
     try {
+      const query = searchQuery.trim();
+
+      // If query starts with GR-, search in goods_receipts and show defective items
+      if (query.toUpperCase().startsWith('GR-')) {
+        const { data: receiptData, error: receiptError } = await supabase
+          .from('goods_receipts')
+          .select('id, receipt_number, supplier:suppliers(name)')
+          .eq('receipt_number', query)
+          .single();
+
+        if (receiptError || !receiptData) {
+          setSearchError('Không tìm thấy phiếu nhập với mã này. Vui lòng kiểm tra lại.');
+          return;
+        }
+
+        // Fetch defective items for this receipt
+        const { data: defData } = await supabase
+          .from('defective_items')
+          .select('*, product:products(name)')
+          .eq('goods_receipt_id', receiptData.id)
+          .order('created_at', { ascending: false });
+
+        if (defData && defData.length > 0) {
+          const supplier = receiptData.supplier as { name: string } | null;
+          setDefectiveList(
+            defData.map((item: Record<string, unknown>) => ({
+              id: item.id as string,
+              product_name: (item.product as { name: string } | null)?.name || 'Sản phẩm',
+              quantity: item.quantity as number,
+              unit: item.unit as string,
+              reason: item.reason as string,
+              created_at: item.created_at as string,
+              receipt_number: receiptData.receipt_number,
+              supplier_name: supplier?.name || null,
+            }))
+          );
+          setShowDefectiveList(true);
+        } else {
+          setSearchError('Phiếu nhập này không có hàng lỗi nào.');
+        }
+        return;
+      }
+
+      // Otherwise, search in sales_orders
       const { data, error } = await supabase
         .from('sales_orders')
         .select(`
@@ -127,7 +173,7 @@ export default function ReturnsPage() {
             product:products(id, name, brand, specification, base_unit)
           )
         `)
-        .eq('order_number', searchQuery.trim())
+        .eq('order_number', query)
         .single();
 
       if (error || !data) {
@@ -287,7 +333,7 @@ export default function ReturnsPage() {
               quantity: returnItem.quantity,
               unit: returnItem.unit,
               reason: returnItem.reason,
-              status: 'pending_return',
+              status: 'pending',
               goods_receipt_id: null,
             });
 
@@ -344,25 +390,59 @@ export default function ReturnsPage() {
         reason,
         status,
         created_at,
-        product:products(name)
+        goods_receipt_id,
+        product:products(name),
+        goods_receipt:goods_receipts(receipt_number, supplier:suppliers(name))
       `)
-      .eq('status', 'pending_return')
+      .eq('status', 'pending')
       .order('created_at', { ascending: false });
 
     if (!error && data) {
       setDefectiveList(
-        data.map((item: Record<string, unknown>) => ({
-          id: item.id as string,
-          product_name: (item.product as { name: string } | null)?.name || 'Sản phẩm',
-          quantity: item.quantity as number,
-          unit: item.unit as string,
-          reason: item.reason as string,
-          created_at: item.created_at as string,
-        }))
+        data.map((item: Record<string, unknown>) => {
+          const receipt = item.goods_receipt as { receipt_number: string; supplier: { name: string } | null } | null;
+          return {
+            id: item.id as string,
+            product_name: (item.product as { name: string } | null)?.name || 'Sản phẩm',
+            quantity: item.quantity as number,
+            unit: item.unit as string,
+            reason: item.reason as string,
+            created_at: item.created_at as string,
+            receipt_number: receipt?.receipt_number || null,
+            supplier_name: receipt?.supplier?.name || null,
+          };
+        })
       );
     }
     setShowDefectiveList(true);
   }, [supabase]);
+
+  /** Đánh dấu hàng lỗi đã trả NCC */
+  const markAsReturned = useCallback(async (itemId: string) => {
+    const { error } = await supabase
+      .from('defective_items')
+      .update({ status: 'returned', returned_at: new Date().toISOString() })
+      .eq('id', itemId);
+
+    if (!error) {
+      setDefectiveList((prev) => prev.filter((item) => item.id !== itemId));
+    }
+  }, [supabase]);
+
+  /** Đánh dấu tất cả hàng lỗi đã trả NCC */
+  const markAllAsReturned = useCallback(async () => {
+    const ids = defectiveList.map((item) => item.id);
+    if (ids.length === 0) return;
+
+    const { error } = await supabase
+      .from('defective_items')
+      .update({ status: 'returned', returned_at: new Date().toISOString() })
+      .in('id', ids);
+
+    if (!error) {
+      setDefectiveList([]);
+    }
+  }, [defectiveList, supabase]);
 
 
   // === Render ===
@@ -423,7 +503,7 @@ export default function ReturnsPage() {
         <CardContent>
           <div className="flex gap-2">
             <Input
-              placeholder="Nhập mã đơn hàng (VD: ORD-001)..."
+              placeholder="Nhập mã đơn hàng (SO-...) hoặc phiếu nhập (GR-...)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearchOrder()}
@@ -656,13 +736,25 @@ export default function ReturnsPage() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Hàng lỗi chờ trả NCC</CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowDefectiveList(false)}
-              >
-                Đóng
-              </Button>
+              <div className="flex gap-2">
+                {defectiveList.length > 0 && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={markAllAsReturned}
+                  >
+                    Đã trả tất cả
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDefectiveList(false)}
+                >
+                  Đóng
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -675,18 +767,33 @@ export default function ReturnsPage() {
                 {defectiveList.map((item) => (
                   <div key={item.id} className="p-3 border rounded-lg">
                     <div className="flex items-start justify-between gap-2">
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="font-medium text-sm">{item.product_name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           SL: {item.quantity} {item.unit} · Lý do: {item.reason}
                         </p>
+                        {item.receipt_number && (
+                          <p className="text-xs text-muted-foreground">
+                            Phiếu nhập: {item.receipt_number}
+                          </p>
+                        )}
+                        {item.supplier_name && (
+                          <p className="text-xs text-blue-600 font-medium">
+                            NCC: {item.supplier_name}
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           Ngày: {formatDate(item.created_at)}
                         </p>
                       </div>
-                      <Badge variant="destructive" className="text-xs shrink-0">
-                        Chờ trả
-                      </Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 cursor-pointer"
+                        onClick={() => markAsReturned(item.id)}
+                      >
+                        Đã trả
+                      </Button>
                     </div>
                   </div>
                 ))}

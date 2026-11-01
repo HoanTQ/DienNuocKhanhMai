@@ -154,7 +154,7 @@ export default function ReportsPage() {
         quantity,
         unit_price,
         line_total,
-        product:products(name, brand, category_id, weighted_avg_cost, category:categories(name))
+        product:products(name, brand, category_id, product_costs(weighted_avg_cost), category:categories(name))
       `)
       .gte('created_at', dateFrom)
       .lte('created_at', dateTo + 'T23:59:59');
@@ -175,7 +175,7 @@ export default function ReportsPage() {
       const productId = item.product_id;
       const existing = productMap.get(productId);
       const itemRevenue = item.line_total;
-      const itemCost = (product.weighted_avg_cost || 0) * item.quantity;
+      const itemCost = (product.product_costs?.weighted_avg_cost || 0) * item.quantity;
 
       if (existing) {
         existing.quantity_sold += item.quantity;
@@ -214,7 +214,7 @@ export default function ReportsPage() {
       .select(`
         quantity,
         line_total,
-        product:products(weighted_avg_cost, category_id, category:categories(id, name))
+        product:products(category_id, product_costs(weighted_avg_cost), category:categories(id, name))
       `)
       .gte('created_at', dateFrom)
       .lte('created_at', dateTo + 'T23:59:59');
@@ -236,7 +236,7 @@ export default function ReportsPage() {
       const categoryName = product.category?.name || 'Chưa phân loại';
       const existing = categoryMap.get(categoryId);
       const itemRevenue = item.line_total;
-      const itemCost = (product.weighted_avg_cost || 0) * item.quantity;
+      const itemCost = (product.product_costs?.weighted_avg_cost || 0) * item.quantity;
 
       if (existing) {
         existing.total_quantity_sold += item.quantity;
@@ -273,7 +273,7 @@ export default function ReportsPage() {
         created_at,
         quantity,
         line_total,
-        product:products(weighted_avg_cost)
+        product:products(product_costs(weighted_avg_cost))
       `)
       .gte('created_at', dateFrom)
       .lte('created_at', dateTo + 'T23:59:59')
@@ -295,7 +295,7 @@ export default function ReportsPage() {
       const saleDate = item.created_at.split('T')[0];
       const existing = dateMap.get(saleDate);
       const itemRevenue = item.line_total;
-      const itemCost = (product.weighted_avg_cost || 0) * item.quantity;
+      const itemCost = (product.product_costs?.weighted_avg_cost || 0) * item.quantity;
 
       if (existing) {
         existing.revenue += itemRevenue;
@@ -403,7 +403,7 @@ export default function ReportsPage() {
           Báo cáo Tồn kho & Công nợ →
         </a>
         <a
-          href="/reports/quotation"
+          href="/quotation"
           className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
         >
           Báo giá →

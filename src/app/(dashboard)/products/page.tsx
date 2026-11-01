@@ -6,24 +6,26 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { Product, Category } from '@/lib/types';
+import type { Product, UserProfile } from '@/lib/types';
 import Link from 'next/link';
 
 /**
  * Trang Danh sách Sản phẩm
  *
- * Hiển thị danh sách sản phẩm với tìm kiếm, lọc theo nhóm hàng.
+ * Hiển thị danh sách sản phẩm với tìm kiếm.
  * Hỗ trợ thêm, sửa sản phẩm.
+ * Owner: hiển thị thêm Giá vốn, Giá NCC, Biên lợi nhuận
  *
  * Validates: Requirements 6.1, 6.2, 6.3
  */
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  // Map: product_id → latest supplier price
+  const [supplierPriceMap, setSupplierPriceMap] = useState<Record<string, number>>({});
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -32,39 +34,64 @@ export default function ProductsPage() {
    */
   const fetchProducts = useCallback(async () => {
     setLoading(true);
+
+    // Fetch user profile
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (profile) setUserProfile(profile as UserProfile);
+    }
+
     const { data, error } = await supabase
       .from('products')
-      .select('*')
+      .select('*, product_costs(weighted_avg_cost, last_cost)')
       .order('name', { ascending: true });
 
     if (error) {
       console.error('Lỗi tải danh sách sản phẩm:', error.message);
     } else {
-      setProducts(data || []);
+      // Làm phẳng product_costs -> weighted_avg_cost / last_cost (owner join được)
+      const flattened = (data || []).map((row) => {
+        const { product_costs, ...product } = row as Record<string, unknown> & {
+          product_costs?: { weighted_avg_cost: number; last_cost: number } | null;
+        };
+        return {
+          ...product,
+          weighted_avg_cost: product_costs?.weighted_avg_cost ?? 0,
+          last_cost: product_costs?.last_cost ?? 0,
+        };
+      });
+      setProducts(flattened as Product[]);
+
+      // Fetch supplier prices (latest per product) — Owner only
+      if (data && data.length > 0) {
+        const { data: pricesData } = await supabase
+          .from('supplier_prices')
+          .select('product_id, unit_price, effective_date')
+          .order('effective_date', { ascending: false });
+
+        if (pricesData) {
+          // Lấy giá mới nhất cho mỗi product
+          const priceMap: Record<string, number> = {};
+          for (const p of pricesData) {
+            if (!priceMap[p.product_id]) {
+              priceMap[p.product_id] = p.unit_price;
+            }
+          }
+          setSupplierPriceMap(priceMap);
+        }
+      }
     }
     setLoading(false);
   }, [supabase]);
 
-  /**
-   * Fetch danh sách nhóm hàng
-   */
-  const fetchCategories = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('name', { ascending: true });
-
-    if (error) {
-      console.error('Lỗi tải nhóm hàng:', error.message);
-    } else {
-      setCategories(data || []);
-    }
-  }, [supabase]);
-
   useEffect(() => {
     fetchProducts();
-    fetchCategories();
-  }, [fetchProducts, fetchCategories]);
+  }, [fetchProducts]);
 
   /**
    * Xóa sản phẩm
@@ -88,31 +115,7 @@ export default function ProductsPage() {
   };
 
   /**
-   * Lấy tên nhóm hàng từ category_id
-   */
-  const getCategoryName = (categoryId: string): string => {
-    const category = categories.find((c) => c.id === categoryId);
-    return category?.name || '—';
-  };
-
-  /**
-   * Lấy nhóm chính (parent category)
-   */
-  const getMainCategory = (categoryId: string): string | null => {
-    const category = categories.find((c) => c.id === categoryId);
-    if (!category) return null;
-    if (!category.parent_id) return category.name;
-    const parent = categories.find((c) => c.id === category.parent_id);
-    return parent?.name || null;
-  };
-
-  /**
-   * Nhóm hàng chính (không có parent)
-   */
-  const mainCategories = categories.filter((c) => !c.parent_id);
-
-  /**
-   * Lọc sản phẩm theo tìm kiếm và nhóm hàng
+   * Lọc sản phẩm theo tìm kiếm
    */
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
@@ -122,15 +125,7 @@ export default function ProductsPage() {
       product.specification.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (product.barcode && product.barcode.includes(searchQuery));
 
-    const matchesCategory =
-      !selectedCategory ||
-      product.category_id === selectedCategory ||
-      // Lọc theo nhóm chính: bao gồm cả nhóm phụ
-      categories
-        .filter((c) => c.parent_id === selectedCategory)
-        .some((sub) => sub.id === product.category_id);
-
-    return matchesSearch && matchesCategory;
+    return matchesSearch;
   });
 
   /**
@@ -170,6 +165,11 @@ export default function ProductsPage() {
               Quản lý giá
             </Button>
           </Link>
+          <Link href="/products/import">
+            <Button variant="outline" size="lg" className="w-full md:w-auto">
+              Nhập từ Excel
+            </Button>
+          </Link>
           <Link href="/products/new">
             <Button size="lg" className="w-full md:w-auto">
               + Thêm sản phẩm
@@ -178,7 +178,7 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Search & Filter */}
+      {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex-1">
           <Input
@@ -189,23 +189,10 @@ export default function ProductsPage() {
             aria-label="Tìm kiếm sản phẩm"
           />
         </div>
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="h-12 rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Lọc theo nhóm hàng"
-        >
-          <option value="">Tất cả nhóm hàng</option>
-          {mainCategories.map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
         <Card>
           <CardContent className="p-3 md:p-4">
             <p className="text-xs text-muted-foreground">Tổng sản phẩm</p>
@@ -216,12 +203,6 @@ export default function ProductsPage() {
           <CardContent className="p-3 md:p-4">
             <p className="text-xs text-muted-foreground">Đang hiển thị</p>
             <p className="text-xl md:text-2xl font-bold">{filteredProducts.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 md:p-4">
-            <p className="text-xs text-muted-foreground">Nhóm hàng</p>
-            <p className="text-xl md:text-2xl font-bold">{mainCategories.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -247,11 +228,11 @@ export default function ProductsPage() {
             <ProductCardMobile
               key={product.id}
               product={product}
-              categoryName={getCategoryName(product.category_id)}
-              mainCategory={getMainCategory(product.category_id)}
               formatPrice={formatPrice}
               onDelete={handleDelete}
               isDeleting={deletingId === product.id}
+              isOwner={userProfile?.role === 'owner'}
+              supplierPrice={supplierPriceMap[product.id]}
             />
           ))
         )}
@@ -274,11 +255,16 @@ export default function ProductsPage() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-3 px-2 font-medium">Sản phẩm</th>
-                      <th className="text-left py-3 px-2 font-medium">Nhóm hàng</th>
                       <th className="text-left py-3 px-2 font-medium">Đơn vị</th>
                       <th className="text-right py-3 px-2 font-medium">Giá bán</th>
+                      {userProfile?.role === 'owner' && (
+                        <>
+                          <th className="text-right py-3 px-2 font-medium">Giá vốn</th>
+                          <th className="text-right py-3 px-2 font-medium">Giá NCC</th>
+                          <th className="text-right py-3 px-2 font-medium">Lợi nhuận</th>
+                        </>
+                      )}
                       <th className="text-right py-3 px-2 font-medium">Tồn kho</th>
-                      <th className="text-center py-3 px-2 font-medium">Loại giá</th>
                       <th className="text-center py-3 px-2 font-medium">Thao tác</th>
                     </tr>
                   </thead>
@@ -287,11 +273,11 @@ export default function ProductsPage() {
                       <ProductRowDesktop
                         key={product.id}
                         product={product}
-                        categoryName={getCategoryName(product.category_id)}
-                        mainCategory={getMainCategory(product.category_id)}
                         formatPrice={formatPrice}
                         onDelete={handleDelete}
                         isDeleting={deletingId === product.id}
+                        isOwner={userProfile?.role === 'owner'}
+                        supplierPrice={supplierPriceMap[product.id]}
                       />
                     ))}
                   </tbody>
@@ -309,21 +295,26 @@ export default function ProductsPage() {
 
 interface ProductItemProps {
   product: Product;
-  categoryName: string;
-  mainCategory: string | null;
   formatPrice: (price: number) => string;
   onDelete: (id: string) => void;
   isDeleting: boolean;
+  isOwner?: boolean;
+  supplierPrice?: number;
 }
 
 function ProductCardMobile({
   product,
-  categoryName,
-  mainCategory,
   formatPrice,
   onDelete,
   isDeleting,
+  isOwner,
+  supplierPrice,
 }: ProductItemProps) {
+  const wac = product.weighted_avg_cost ?? 0;
+  const profitPercent = wac > 0
+    ? ((product.selling_price - wac) / wac * 100).toFixed(1)
+    : null;
+
   return (
     <Card>
       <CardContent className="p-4">
@@ -334,9 +325,11 @@ function ProductCardMobile({
               {product.brand} • {product.specification}
             </p>
           </div>
-          <Badge variant={product.price_type === 'fixed' ? 'secondary' : 'warning'} className="shrink-0 text-xs">
-            {product.price_type === 'fixed' ? 'Cố định' : 'Biến động'}
-          </Badge>
+          {product.sku && (
+            <Badge variant="secondary" className="shrink-0 text-xs font-mono">
+              {product.sku}
+            </Badge>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 mt-3">
@@ -357,11 +350,31 @@ function ProductCardMobile({
           </div>
         </div>
 
+        {/* Price info — Owner only */}
+        {isOwner && (
+          <div className="grid grid-cols-3 gap-3 mt-2 pt-2 border-t border-dashed">
+            <div>
+              <p className="text-xs text-muted-foreground">Giá vốn</p>
+              <p className="text-sm font-semibold text-orange-600">
+                {wac > 0 ? formatPrice(wac) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Giá NCC</p>
+              <p className="text-sm font-semibold text-blue-600">
+                {supplierPrice ? formatPrice(supplierPrice) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Lợi nhuận</p>
+              <p className={`text-sm font-semibold ${profitPercent && parseFloat(profitPercent) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {profitPercent ? `${profitPercent}%` : '—'}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="mt-2">
-          <p className="text-xs text-muted-foreground">
-            Nhóm: {mainCategory && mainCategory !== categoryName ? `${mainCategory} > ` : ''}
-            {categoryName}
-          </p>
           {product.barcode && (
             <p className="text-xs text-muted-foreground">Mã vạch: {product.barcode}</p>
           )}
@@ -390,12 +403,17 @@ function ProductCardMobile({
 
 function ProductRowDesktop({
   product,
-  categoryName,
-  mainCategory,
   formatPrice,
   onDelete,
   isDeleting,
+  isOwner,
+  supplierPrice,
 }: ProductItemProps) {
+  const wac = product.weighted_avg_cost ?? 0;
+  const profitPercent = wac > 0
+    ? ((product.selling_price - wac) / wac * 100).toFixed(1)
+    : null;
+
   return (
     <tr className="border-b last:border-b-0 hover:bg-muted/50">
       <td className="py-3 px-2">
@@ -409,25 +427,35 @@ function ProductRowDesktop({
           )}
         </div>
       </td>
-      <td className="py-3 px-2">
-        <div>
-          {mainCategory && mainCategory !== categoryName && (
-            <p className="text-xs text-muted-foreground">{mainCategory}</p>
-          )}
-          <p className="text-sm">{categoryName}</p>
-        </div>
-      </td>
       <td className="py-3 px-2">{product.base_unit}</td>
       <td className="py-3 px-2 text-right font-medium">
         {formatPrice(product.selling_price)}
       </td>
+      {isOwner && (
+        <>
+          <td className="py-3 px-2 text-right">
+            <span className="text-orange-600 font-medium">
+              {wac > 0 ? formatPrice(wac) : '—'}
+            </span>
+          </td>
+          <td className="py-3 px-2 text-right">
+            <span className="text-blue-600 font-medium">
+              {supplierPrice ? formatPrice(supplierPrice) : '—'}
+            </span>
+          </td>
+          <td className="py-3 px-2 text-right">
+            {profitPercent ? (
+              <Badge variant={parseFloat(profitPercent) >= 0 ? 'success' : 'destructive'} className="text-xs">
+                {profitPercent}%
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </td>
+        </>
+      )}
       <td className="py-3 px-2 text-right">
         {product.current_stock} {product.base_unit}
-      </td>
-      <td className="py-3 px-2 text-center">
-        <Badge variant={product.price_type === 'fixed' ? 'secondary' : 'warning'} className="text-xs">
-          {product.price_type === 'fixed' ? 'Cố định' : 'Biến động'}
-        </Badge>
       </td>
       <td className="py-3 px-2 text-center">
         <div className="flex items-center justify-center gap-1">

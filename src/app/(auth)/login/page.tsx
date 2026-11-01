@@ -21,6 +21,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  // Sau khi đăng nhập thành công, đang điều hướng sang dashboard.
+  // Giữ trạng thái loading (không tắt) để người dùng thấy phản hồi liên tục
+  // trong lúc trang mới tải, tránh cảm giác "bấm chưa ăn".
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
 
@@ -34,23 +38,42 @@ export default function LoginPage() {
       const result = await login({ phone, password, rememberMe });
 
       if (result.success) {
+        // Thành công → chuyển sang trạng thái điều hướng, KHÔNG tắt loading.
+        setIsRedirecting(true);
         router.push('/');
         router.refresh();
-      } else {
-        setError(result.error || 'Số điện thoại hoặc mật khẩu không đúng.');
-        if (result.remainingAttempts !== undefined) {
-          setRemainingAttempts(result.remainingAttempts);
-        }
+        return; // không chạy finally-reset bên dưới
       }
+
+      setError(result.error || 'Số điện thoại hoặc mật khẩu không đúng.');
+      if (result.remainingAttempts !== undefined) {
+        setRemainingAttempts(result.remainingAttempts);
+      }
+      setIsLoading(false);
     } catch {
       setError('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.');
-    } finally {
       setIsLoading(false);
     }
   }
 
+  // Loading hiển thị cho cả lúc gọi API lẫn lúc điều hướng sau khi thành công.
+  const showLoading = isLoading || isRedirecting;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-8">
+      {/* Overlay điều hướng: hiện khi đăng nhập thành công, đang tải dashboard.
+          Giúp người dùng thấy hệ thống đang xử lý thay vì tưởng "bấm chưa ăn". */}
+      {isRedirecting && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm font-medium text-foreground">Đang vào hệ thống...</p>
+        </div>
+      )}
+
       <div className="w-full max-w-[400px] space-y-8">
         {/* Logo & Title */}
         <div className="text-center space-y-3">
@@ -99,7 +122,7 @@ export default function LoginPage() {
               onChange={(e) => setPhone(e.target.value)}
               required
               autoComplete="username"
-              disabled={isLoading}
+              disabled={showLoading}
               className="w-full h-12 px-4 rounded-lg border-[1.5px] border-border bg-white text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-colors disabled:opacity-50"
             />
           </div>
@@ -118,7 +141,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                disabled={isLoading}
+                disabled={showLoading}
                 className="w-full h-12 px-4 pr-12 rounded-lg border-[1.5px] border-border bg-white text-base text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-colors disabled:opacity-50"
               />
               <button
@@ -144,7 +167,7 @@ export default function LoginPage() {
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              disabled={isLoading}
+              disabled={showLoading}
               className="w-5 h-5 rounded border-border text-primary focus:ring-primary/20 cursor-pointer"
             />
             <label
@@ -158,13 +181,13 @@ export default function LoginPage() {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isLoading || !phone || !password}
+            disabled={showLoading || !phone || !password}
             className="w-full h-14 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 active:bg-primary/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
           >
-            {isLoading ? (
+            {showLoading ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Đang đăng nhập...</span>
+                <span>{isRedirecting ? 'Đang vào hệ thống...' : 'Đang đăng nhập...'}</span>
               </>
             ) : (
               'Đăng nhập'

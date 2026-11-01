@@ -6,8 +6,9 @@
 
 export interface Product {
   id: string;
+  sku?: string;
   name: string;
-  category_id: string;
+  category_id?: string;
   brand: string;
   specification: string;
   base_unit: string;
@@ -15,11 +16,38 @@ export interface Product {
   image_url?: string;
   description?: string;
   selling_price: number;
+  trade_price?: number | null; // Giá sỉ / giá thợ thầu (null = chưa đặt)
   price_type: 'fixed' | 'variable';
-  weighted_avg_cost: number;
-  last_cost: number;
+  /**
+   * Giá vốn nằm ở bảng riêng `product_costs` (chỉ owner đọc được qua RLS).
+   * Các field dưới đây là OPTIONAL: chỉ có mặt khi owner join product_costs.
+   * Staff không bao giờ nhận được (dùng products_staff_view).
+   */
+  weighted_avg_cost?: number;
+  last_cost?: number;
   min_stock_level: number;
   current_stock: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Giá vốn sản phẩm — bảng riêng, RLS chỉ owner truy cập.
+ * Tách khỏi products để staff không thể đọc dù query trực tiếp.
+ */
+export interface ProductCost {
+  product_id: string;
+  weighted_avg_cost: number;
+  last_cost: number;
+  updated_at: string;
+}
+
+export interface Unit {
+  id: string;
+  name: string;
+  abbreviation?: string;
+  description?: string;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -30,6 +58,7 @@ export interface UnitConversion {
   from_unit: string;
   to_unit: string;
   conversion_rate: number;
+  selling_price?: number | null; // Giá bán riêng cho đơn vị này (null = tự tính)
   level: 1 | 2 | 3; // Tối đa 3 cấp quy đổi
 }
 
@@ -151,6 +180,12 @@ export interface GoodsReceiptItem {
   unit: string;
   unit_cost: number;
   line_total: number;
+  /** Tổng thanh toán sau chiết khấu (user nhập) */
+  total_payment?: number;
+  /** Loại chiết khấu: 'percent' hoặc 'fixed' */
+  discount_type?: 'percent' | 'fixed';
+  /** Giá trị chiết khấu (VD: 5 = 5%, hoặc 370000đ) */
+  discount_value?: number;
 }
 
 export interface PromotionalItem {
@@ -261,7 +296,7 @@ export interface UserProfile {
   id: string;
   phone: string;
   full_name: string;
-  role: 'owner' | 'staff';
+  role: 'owner' | 'staff' | 'sales';
   max_discount_percent?: number; // Giới hạn giảm giá cho staff
   is_active: boolean;
   created_at: string;

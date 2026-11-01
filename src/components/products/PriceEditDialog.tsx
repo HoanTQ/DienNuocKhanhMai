@@ -5,12 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import type { Product } from '@/lib/types';
 
 interface PriceEditDialogProps {
   product: Product;
-  onSave: (productId: string, newPrice: number, newPriceType: 'fixed' | 'variable') => Promise<void>;
+  onSave: (productId: string, newPrice: number, newTradePrice: number | null) => Promise<void>;
   onClose: () => void;
 }
 
@@ -31,7 +30,7 @@ export default function PriceEditDialog({
   onClose,
 }: PriceEditDialogProps) {
   const [sellingPrice, setSellingPrice] = useState<number>(product.selling_price);
-  const [priceType, setPriceType] = useState<'fixed' | 'variable'>(product.price_type);
+  const [tradePrice, setTradePrice] = useState<number | null>(product.trade_price ?? null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,8 +38,9 @@ export default function PriceEditDialog({
    * Calculate profit margin based on WAC
    */
   const getMargin = (): string | null => {
-    if (product.weighted_avg_cost <= 0 || sellingPrice <= 0) return null;
-    const margin = ((sellingPrice - product.weighted_avg_cost) / sellingPrice) * 100;
+    const wac = product.weighted_avg_cost ?? 0;
+    if (wac <= 0 || sellingPrice <= 0) return null;
+    const margin = ((sellingPrice - wac) / sellingPrice) * 100;
     return margin.toFixed(1);
   };
 
@@ -48,8 +48,9 @@ export default function PriceEditDialog({
    * Calculate profit per unit
    */
   const getProfitPerUnit = (): number | null => {
-    if (product.weighted_avg_cost <= 0) return null;
-    return sellingPrice - product.weighted_avg_cost;
+    const wac = product.weighted_avg_cost ?? 0;
+    if (wac <= 0) return null;
+    return sellingPrice - wac;
   };
 
   const margin = getMargin();
@@ -66,10 +67,14 @@ export default function PriceEditDialog({
       setError('Giá bán không được âm');
       return;
     }
+    if (tradePrice != null && tradePrice < 0) {
+      setError('Giá thợ/thầu không được âm');
+      return;
+    }
 
     setSaving(true);
     try {
-      await onSave(product.id, sellingPrice, priceType);
+      await onSave(product.id, sellingPrice, tradePrice);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Có lỗi xảy ra';
       setError(message);
@@ -125,16 +130,16 @@ export default function PriceEditDialog({
                 <div>
                   <p className="text-xs text-muted-foreground">Giá vốn TB (WAC)</p>
                   <p className="text-sm font-semibold text-orange-600">
-                    {product.weighted_avg_cost > 0
-                      ? formatPrice(product.weighted_avg_cost)
+                    {(product.weighted_avg_cost ?? 0) > 0
+                      ? formatPrice(product.weighted_avg_cost ?? 0)
                       : '—'}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Giá nhập cuối</p>
                   <p className="text-sm font-semibold text-blue-600">
-                    {product.last_cost > 0
-                      ? formatPrice(product.last_cost)
+                    {(product.last_cost ?? 0) > 0
+                      ? formatPrice(product.last_cost ?? 0)
                       : '—'}
                   </p>
                 </div>
@@ -157,22 +162,21 @@ export default function PriceEditDialog({
               />
             </div>
 
-            {/* Price type selection */}
+            {/* Trade price input */}
             <div className="space-y-2">
-              <Label htmlFor="price_type">Loại giá</Label>
-              <select
-                id="price_type"
-                value={priceType}
-                onChange={(e) => setPriceType(e.target.value as 'fixed' | 'variable')}
-                className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="fixed">Giá cố định</option>
-                <option value="variable">Giá biến động</option>
-              </select>
+              <Label htmlFor="trade_price">Giá thợ/thầu (VNĐ)</Label>
+              <Input
+                id="trade_price"
+                type="number"
+                min="0"
+                value={tradePrice ?? ''}
+                onChange={(e) =>
+                  setTradePrice(e.target.value === '' ? null : Number(e.target.value))
+                }
+                placeholder="Để trống nếu không có giá sỉ"
+              />
               <p className="text-xs text-muted-foreground">
-                {priceType === 'fixed'
-                  ? 'Giá ít thay đổi, ổn định theo thời gian'
-                  : 'Giá thay đổi theo giá NCC / thị trường'}
+                Giá bán cho thợ/nhà thầu. Để trống nếu bán đồng giá lẻ.
               </p>
             </div>
 
@@ -202,17 +206,6 @@ export default function PriceEditDialog({
                 </div>
               </div>
             )}
-
-            {/* Current price type badge */}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>Loại giá hiện tại:</span>
-              <Badge
-                variant={product.price_type === 'fixed' ? 'secondary' : 'warning'}
-                className="text-xs"
-              >
-                {product.price_type === 'fixed' ? 'Cố định' : 'Biến động'}
-              </Badge>
-            </div>
 
             {/* Error message */}
             {error && (
