@@ -9,14 +9,14 @@ import { login } from '@/services/auth.service';
  * Login Page — Redesigned per design-system/pages/login.md
  *
  * - Centered card, max-width 400px
- * - Phone + password login
+ * - Login ID (username) + password login
  * - Large touch targets (h-14 submit button)
  * - Clear error states
  * - Remember me checkbox
  */
 export default function LoginPage() {
   const router = useRouter();
-  const [phone, setPhone] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -35,7 +35,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const result = await login({ phone, password, rememberMe });
+      const result = await login({ phone: loginId, password, rememberMe });
 
       if (result.success) {
         // Thành công → chuyển sang trạng thái điều hướng, KHÔNG tắt loading.
@@ -45,7 +45,7 @@ export default function LoginPage() {
         return; // không chạy finally-reset bên dưới
       }
 
-      setError(result.error || 'Số điện thoại hoặc mật khẩu không đúng.');
+      setError(result.error || 'Tài khoản hoặc mật khẩu không đúng.');
       if (result.remainingAttempts !== undefined) {
         setRemainingAttempts(result.remainingAttempts);
       }
@@ -110,16 +110,16 @@ export default function LoginPage() {
 
           {/* Account Input */}
           <div className="space-y-2">
-            <label htmlFor="phone" className="block text-sm font-medium text-foreground">
+            <label htmlFor="loginId" className="block text-sm font-medium text-foreground">
               Tài khoản
             </label>
             <input
-              id="phone"
+              id="loginId"
               type="text"
               inputMode="text"
-              placeholder="0912 345 678"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Nhập tên đăng nhập"
+              value={loginId}
+              onChange={(e) => setLoginId(e.target.value)}
               required
               autoComplete="username"
               disabled={showLoading}
@@ -181,7 +181,7 @@ export default function LoginPage() {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={showLoading || !phone || !password}
+            disabled={showLoading || !loginId || !password}
             className="w-full h-14 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 active:bg-primary/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
           >
             {showLoading ? (
