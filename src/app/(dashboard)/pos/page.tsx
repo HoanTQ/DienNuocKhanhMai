@@ -13,6 +13,8 @@ import type { Product, UnitConversion, UserProfile } from '@/lib/types';
 import { POSCustomerSelect } from '@/components/pos/POSCustomerSelect';
 import { createClient } from '@/lib/supabase/client';
 import { convertUnit } from '@/services/pricing.service';
+import { printCartReceipt } from '@/lib/print/printCartReceipt';
+import { Printer } from 'lucide-react';
 
 /**
  * POS Page — Approach 2: Compact dropdown overlay + scrollable cart
@@ -186,6 +188,22 @@ export default function POSPage() {
     await submitOrder(userId, userMaxDiscount);
   }, [submitOrder, currentUser]);
 
+  /** In toa tạm (A5) để khách xem lại trước khi thanh toán */
+  const handlePrintReceipt = useCallback(() => {
+    if (cartItems.length === 0) return;
+    const ok = printCartReceipt({
+      items: cartItems,
+      customer,
+      subtotal,
+      discountAmount,
+      total,
+    });
+    if (!ok) {
+      clearError();
+      usePOSStore.setState({ error: 'Không thể mở cửa sổ in. Vui lòng cho phép popup rồi thử lại.' });
+    }
+  }, [cartItems, customer, subtotal, discountAmount, total, clearError]);
+
   const formatPrice = (price: number): string => {
     return new Intl.NumberFormat('vi-VN', {
       style: 'currency',
@@ -354,17 +372,25 @@ export default function POSPage() {
               <span className="text-sm text-muted-foreground">Tổng cộng</span>
               <span className="text-lg font-bold font-mono">{formatPrice(total)}</span>
             </div>
-            <button
-              onClick={handleSubmitOrder}
-              disabled={isSubmitting}
-              className={`w-full h-12 rounded-lg text-white text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer ${
-                priceMode === 'trade' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'
-              }`}
-            >
-              {isSubmitting
-                ? 'Đang xử lý...'
-                : `${priceMode === 'trade' ? 'Thanh toán giá sỉ' : 'Thanh toán'} ${formatPrice(total)}`}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handlePrintReceipt}
+                className="h-12 px-4 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted transition-colors cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+              >
+                <Printer className="h-4 w-4" /> In phiếu
+              </button>
+              <button
+                onClick={handleSubmitOrder}
+                disabled={isSubmitting}
+                className={`flex-1 h-12 rounded-lg text-white text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer ${
+                  priceMode === 'trade' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'
+                }`}
+              >
+                {isSubmitting
+                  ? 'Đang xử lý...'
+                  : `${priceMode === 'trade' ? 'Thanh toán giá sỉ' : 'Thanh toán'} ${formatPrice(total)}`}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -501,6 +527,13 @@ export default function POSPage() {
               <span className="text-xl font-bold font-mono">{formatPrice(total)}</span>
             </div>
           </div>
+          <button
+            onClick={handlePrintReceipt}
+            disabled={cartItems.length === 0}
+            className="w-full h-11 mb-2 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Printer className="h-4 w-4" /> In phiếu (xem trước)
+          </button>
           <button
             onClick={handleSubmitOrder}
             disabled={cartItems.length === 0 || isSubmitting}

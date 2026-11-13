@@ -1,20 +1,40 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ProductSearch } from './ProductSearch';
 
-// Mock Supabase client
-const mockLimit = vi.fn();
-const mockTextSearch = vi.fn(() => ({ limit: mockLimit }));
-const mockOr = vi.fn(() => ({ limit: mockLimit }));
-const mockEq = vi.fn(() => ({ limit: mockLimit }));
-const mockSelect = vi.fn(() => ({
-  textSearch: mockTextSearch,
-  or: mockOr,
-  eq: mockEq,
-}));
-const mockFrom = vi.fn(() => ({
-  select: mockSelect,
-}));
+/**
+ * Supabase mock.
+ *
+ * ProductSearch dùng 2 kiểu query:
+ *  1. Tải danh sách:  from('products').select('*').eq('is_active', true).order('name', ...)
+ *  2. Tra mã vạch:    from('products').select('*').eq('barcode', code).limit(1)
+ *
+ * Việc lọc/tìm kiếm theo từ khóa được thực hiện PHÍA CLIENT (không dấu),
+ * nên các test chỉ cần cung cấp dữ liệu qua 2 nguồn trên.
+ */
+let productList: unknown[] = [];
+let barcodeResult: unknown[] = [];
+let loadError: { message: string } | null = null;
+
+// Chuỗi tải danh sách: select().eq('is_active').order().range()
+// Trang đầu trả toàn bộ productList (<1000) nên vòng lặp phân trang dừng ngay.
+const mockRange = vi.fn(() =>
+  Promise.resolve({ data: loadError ? null : productList, error: loadError })
+);
+const mockOrder = vi.fn(() => ({ range: mockRange }));
+// Chuỗi tra mã vạch: select().eq('barcode').limit()
+const mockBarcodeLimit = vi.fn(() => Promise.resolve({ data: barcodeResult, error: null }));
+
+const mockEq = vi.fn((column: string) => {
+  if (column === 'is_active') {
+    return { order: mockOrder };
+  }
+  // barcode
+  return { limit: mockBarcodeLimit };
+});
+
+const mockSelect = vi.fn(() => ({ eq: mockEq }));
+const mockFrom = vi.fn(() => ({ select: mockSelect }));
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
@@ -24,15 +44,14 @@ vi.mock('@/lib/supabase/client', () => ({
 
 // Mock BarcodeScanner component
 vi.mock('@/components/barcode/BarcodeScanner', () => ({
-  BarcodeScanner: ({ onScan, isActive }: { onScan: (code: string) => void; isActive: boolean }) => (
+  BarcodeScanner: ({ onScan, isActive }: { onScan: (code: string) => void; isActive: boolean }) =>
     isActive ? (
       <div data-testid="barcode-scanner">
         <button onClick={() => onScan('8934567890123')} data-testid="mock-scan-btn">
           Simulate Scan
         </button>
       </div>
-    ) : null
-  ),
+    ) : null,
 }));
 
 const mockProduct = {
@@ -48,14 +67,26 @@ const mockProduct = {
   last_cost: 10500,
   min_stock_level: 50,
   current_stock: 200,
+  is_active: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
+};
+
+const ironBar = {
+  ...mockProduct,
+  id: 'prod-2',
+  name: 'Cây sắt P25',
+  brand: '',
+  specification: '',
+  barcode: undefined,
 };
 
 describe('ProductSearch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLimit.mockResolvedValue({ data: [], error: null });
+    productList = [mockProduct];
+    barcodeResult = [];
+    loadError = null;
   });
 
   it('should render search input and barcode button', () => {
@@ -77,23 +108,7 @@ describe('ProductSearch', () => {
     expect(screen.getByPlaceholderText('Tìm nhanh...')).toBeInTheDocument();
   });
 
-  it('should search on Enter key press without debounce', async () => {
-    mockLimit.mockResolvedValue({ data: [mockProduct], error: null });
-
-    render(<ProductSearch />);
-
-    const input = screen.getByLabelText('Tìm kiếm sản phẩm');
-    fireEvent.change(input, { target: { value: 'ống nước' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(mockFrom).toHaveBeenCalledWith('products');
-    });
-  });
-
   it('should display search results with product info', async () => {
-    mockLimit.mockResolvedValue({ data: [mockProduct], error: null });
-
     render(<ProductSearch />);
 
     const input = screen.getByLabelText('Tìm kiếm sản phẩm');
@@ -104,22 +119,45 @@ describe('ProductSearch', () => {
       expect(screen.getByText('Ống nước PVC Bình Minh')).toBeInTheDocument();
     });
 
-    // Verify all required fields are displayed (brand + spec shown together)
-    expect(screen.getByText(/Bình Minh · D21 dày 1.8mm/)).toBeInTheDocument();
+    expect(screen.getByText('Bình Minh')).toBeInTheDocument();
+    expect(screen.getByText('D21 dày 1.8mm')).toBeInTheDocument();
     expect(screen.getByText('mét')).toBeInTheDocument();
-    // Price formatted as VND
     expect(screen.getByText(/15\.000/)).toBeInTheDocument();
-    // Stock
     expect(screen.getByText(/200/)).toBeInTheDocument();
   });
 
-  it('should show empty state when no results found', async () => {
-    mockLimit.mockResolvedValue({ data: [], error: null });
+  it('should find product with accent-insensitive query (gõ không dấu)', async () => {
+    render(<ProductSearch />);
+
+    const input = screen.getByLabelText('Tìm kiếm sản phẩm');
+    // Gõ KHÔNG dấu "ong nuoc" vẫn ra "Ống nước PVC Bình Minh"
+    fireEvent.change(input, { target: { value: 'ong nuoc' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Ống nước PVC Bình Minh')).toBeInTheDocument();
+    });
+  });
+
+  it('should match multiple out-of-order tokens ("sat 25" -> "Cây sắt P25")', async () => {
+    productList = [ironBar];
 
     render(<ProductSearch />);
 
     const input = screen.getByLabelText('Tìm kiếm sản phẩm');
-    fireEvent.change(input, { target: { value: 'xyz' } });
+    fireEvent.change(input, { target: { value: 'sat 25' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Cây sắt P25')).toBeInTheDocument();
+    });
+  });
+
+  it('should show empty state when no results found', async () => {
+    render(<ProductSearch />);
+
+    const input = screen.getByLabelText('Tìm kiếm sản phẩm');
+    fireEvent.change(input, { target: { value: 'xyzkhongcosanpham' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(() => {
@@ -128,7 +166,6 @@ describe('ProductSearch', () => {
   });
 
   it('should call onSelectProduct when a result is clicked', async () => {
-    mockLimit.mockResolvedValue({ data: [mockProduct], error: null });
     const onSelect = vi.fn();
 
     render(<ProductSearch onSelectProduct={onSelect} />);
@@ -153,21 +190,17 @@ describe('ProductSearch', () => {
 
     expect(screen.getByTestId('barcode-scanner')).toBeInTheDocument();
 
-    // Click again to close
     fireEvent.click(screen.getByLabelText('Đóng máy quét'));
     expect(screen.queryByTestId('barcode-scanner')).not.toBeInTheDocument();
   });
 
   it('should lookup product by barcode when scanned', async () => {
-    mockLimit.mockResolvedValue({ data: [mockProduct], error: null });
+    barcodeResult = [mockProduct];
     const onSelect = vi.fn();
 
     render(<ProductSearch onSelectProduct={onSelect} />);
 
-    // Open scanner
     fireEvent.click(screen.getByLabelText('Quét mã vạch'));
-
-    // Simulate scan
     fireEvent.click(screen.getByTestId('mock-scan-btn'));
 
     await waitFor(() => {
@@ -177,24 +210,22 @@ describe('ProductSearch', () => {
   });
 
   it('should show error when barcode not found', async () => {
-    mockLimit.mockResolvedValue({ data: [], error: null });
+    barcodeResult = [];
 
     render(<ProductSearch />);
 
-    // Open scanner
     fireEvent.click(screen.getByLabelText('Quét mã vạch'));
-
-    // Simulate scan
     fireEvent.click(screen.getByTestId('mock-scan-btn'));
 
     await waitFor(() => {
-      expect(screen.getByText('Không tìm thấy sản phẩm với mã vạch này.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Không tìm thấy sản phẩm với mã vạch này.')
+      ).toBeInTheDocument();
     });
   });
 
-  it('should show error message on search failure', async () => {
-    // FTS returns error, ilike also returns error
-    mockLimit.mockResolvedValue({ data: null, error: { message: 'Network error' } });
+  it('should show error message on load failure', async () => {
+    loadError = { message: 'Network error' };
 
     render(<ProductSearch />);
 
@@ -208,12 +239,7 @@ describe('ProductSearch', () => {
   });
 
   it('should show low stock badge for products at or below min level', async () => {
-    const lowStockProduct = {
-      ...mockProduct,
-      current_stock: 5,
-      min_stock_level: 10,
-    };
-    mockLimit.mockResolvedValue({ data: [lowStockProduct], error: null });
+    productList = [{ ...mockProduct, current_stock: 5, min_stock_level: 10 }];
 
     render(<ProductSearch />);
 
@@ -222,8 +248,7 @@ describe('ProductSearch', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(() => {
-      const stockBadge = screen.getByText(/Tồn: 5/);
-      expect(stockBadge).toBeInTheDocument();
+      expect(screen.getByText(/Tồn: 5/)).toBeInTheDocument();
     });
   });
 
@@ -234,47 +259,7 @@ describe('ProductSearch', () => {
     fireEvent.change(input, { target: { value: '' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    // Wait a bit to ensure no call is made
     await new Promise((r) => setTimeout(r, 50));
     expect(mockFrom).not.toHaveBeenCalled();
-  });
-
-  it('should fallback to ilike search when FTS returns no results', async () => {
-    // First call (FTS) returns empty, second call (ilike) returns results
-    mockLimit
-      .mockResolvedValueOnce({ data: [], error: null })
-      .mockResolvedValueOnce({ data: [mockProduct], error: null });
-
-    render(<ProductSearch />);
-
-    const input = screen.getByLabelText('Tìm kiếm sản phẩm');
-    fireEvent.change(input, { target: { value: 'bình minh' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(screen.getByText('Ống nước PVC Bình Minh')).toBeInTheDocument();
-    });
-
-    // Verify both FTS and ilike were called
-    expect(mockTextSearch).toHaveBeenCalled();
-    expect(mockOr).toHaveBeenCalled();
-  });
-
-  it('should close scanner after successful barcode lookup', async () => {
-    mockLimit.mockResolvedValue({ data: [mockProduct], error: null });
-
-    render(<ProductSearch />);
-
-    // Open scanner
-    fireEvent.click(screen.getByLabelText('Quét mã vạch'));
-    expect(screen.getByTestId('barcode-scanner')).toBeInTheDocument();
-
-    // Simulate scan
-    fireEvent.click(screen.getByTestId('mock-scan-btn'));
-
-    await waitFor(() => {
-      // Scanner should be closed after lookup
-      expect(screen.queryByTestId('barcode-scanner')).not.toBeInTheDocument();
-    });
   });
 });

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { BarcodeScanner } from '@/components/barcode/BarcodeScanner';
-import { cn } from '@/lib/utils';
+import { cn, matchSearch } from '@/lib/utils';
 import type { Product } from '@/lib/types';
 
 interface ProductSearchProps {
@@ -44,6 +44,10 @@ export function ProductSearch({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const supabase = useRef(createClient());
+  // Cache toàn bộ sản phẩm active để lọc không dấu phía client.
+  // Tải một lần (lazy) ở lần tìm đầu tiên, dùng lại cho các lần sau.
+  const allProductsRef = useRef<Product[] | null>(null);
+  const loadPromiseRef = useRef<Promise<Product[]> | null>(null);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -67,73 +71,102 @@ export function ProductSearch({
   }, []);
 
   /**
-   * Tìm kiếm sản phẩm bằng full-text search hoặc ilike.
-   * Sử dụng FTS index: idx_products_fts (to_tsvector('simple', name || ' ' || brand || ' ' || specification))
-   * Fallback sang ilike nếu FTS không trả kết quả.
-   * Target: < 2 giây (Requirement 2.2)
+   * Tải toàn bộ sản phẩm active về một lần rồi cache lại.
+   * Dùng cho tìm kiếm không dấu phía client (lọc ngay trong trình duyệt).
+   * Gọi lại nhiều lần an toàn: lần tải đang chạy sẽ được tái sử dụng.
    */
-  const searchProducts = useCallback(async (searchQuery: string) => {
-    if (!searchQuery.trim()) {
-      setResults([]);
-      return;
-    }
+  const ensureProductsLoaded = useCallback(async (): Promise<Product[]> => {
+    if (allProductsRef.current) return allProductsRef.current;
+    if (loadPromiseRef.current) return loadPromiseRef.current;
 
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Nếu query là số thuần (8-13 ký tự) → có thể là mã vạch, tìm barcode trước
-      const trimmed = searchQuery.trim();
-      if (/^\d{8,13}$/.test(trimmed)) {
-        const { data: barcodeResult } = await supabase.current
+    const promise = (async () => {
+      // Supabase giới hạn tối đa 1000 dòng mỗi query → phân trang để lấy ĐỦ
+      // toàn bộ sản phẩm (hiện ~2600, vẫn nhẹ vì mỗi dòng rất nhỏ).
+      const PAGE = 1000;
+      const all: Product[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error: loadError } = await supabase.current
           .from('products')
           .select('*')
-          .eq('barcode', trimmed)
-          .limit(1);
+          .eq('is_active', true)
+          .order('name', { ascending: true })
+          .range(from, from + PAGE - 1);
 
-        if (barcodeResult && barcodeResult.length > 0) {
-          setResults(barcodeResult);
-          setIsLoading(false);
-          return;
+        if (loadError) {
+          loadPromiseRef.current = null;
+          throw loadError;
         }
+
+        const page = data || [];
+        all.push(...page);
+        // Hết dữ liệu khi trang trả về ít hơn kích thước trang
+        if (page.length < PAGE) break;
       }
 
-      // Thử full-text search trước (nhanh hơn với index)
-      const ftsQuery = trimmed.split(/\s+/).join(' & ');
-      const { data: ftsResults, error: ftsError } = await supabase.current
-        .from('products')
-        .select('*')
-        .textSearch('fts', ftsQuery, { config: 'simple' })
-        .limit(20);
+      allProductsRef.current = all;
+      return allProductsRef.current;
+    })();
 
-      if (!ftsError && ftsResults && ftsResults.length > 0) {
-        setResults(ftsResults);
-        setIsLoading(false);
+    loadPromiseRef.current = promise;
+    return promise;
+  }, []);
+
+  /**
+   * Tìm kiếm sản phẩm không dấu, nhiều từ khóa rời, không cần đúng thứ tự.
+   *
+   * - Gõ "sat 25" vẫn ra "Cây sắt P25" (bỏ dấu + khớp từng mảnh).
+   * - Query toàn số 8-13 ký tự → ưu tiên tra cứu mã vạch.
+   * - Lọc trên: tên, thương hiệu, quy cách, SKU, mã vạch.
+   */
+  const searchProducts = useCallback(
+    async (searchQuery: string) => {
+      const trimmed = searchQuery.trim();
+      if (!trimmed) {
+        setResults([]);
         return;
       }
 
-      // Fallback: ilike search trên name, brand, specification, barcode
-      const likePattern = `%${trimmed}%`;
-      const { data: likeResults, error: likeError } = await supabase.current
-        .from('products')
-        .select('*')
-        .or(
-          `name.ilike.${likePattern},brand.ilike.${likePattern},specification.ilike.${likePattern},barcode.ilike.${likePattern}`
-        )
-        .limit(20);
+      setIsLoading(true);
+      setError(null);
 
-      if (likeError) {
-        throw likeError;
+      try {
+        // Query toàn số 8-13 ký tự → có thể là mã vạch, tra trực tiếp trước
+        if (/^\d{8,13}$/.test(trimmed)) {
+          const { data: barcodeResult } = await supabase.current
+            .from('products')
+            .select('*')
+            .eq('barcode', trimmed)
+            .limit(1);
+
+          if (barcodeResult && barcodeResult.length > 0) {
+            setResults(barcodeResult);
+            return;
+          }
+          // Không khớp mã vạch → vẫn thử lọc như từ khóa thường bên dưới
+        }
+
+        const products = await ensureProductsLoaded();
+        const matched = products
+          .filter((p) =>
+            matchSearch(
+              [p.name, p.brand, p.specification, p.sku, p.barcode]
+                .filter(Boolean)
+                .join(' '),
+              trimmed
+            )
+          )
+          .slice(0, 20);
+
+        setResults(matched);
+      } catch {
+        setError('Không thể tìm kiếm. Vui lòng thử lại.');
+        setResults([]);
+      } finally {
+        setIsLoading(false);
       }
-
-      setResults(likeResults || []);
-    } catch (err) {
-      setError('Không thể tìm kiếm. Vui lòng thử lại.');
-      setResults([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    },
+    [ensureProductsLoaded]
+  );
 
   /**
    * Xổ danh sách sản phẩm để duyệt (không cần gõ).
@@ -153,15 +186,9 @@ export function ProductSearch({
     setQuery('');
 
     try {
-      const { data, error: browseError } = await supabase.current
-        .from('products')
-        .select('*')
-        .eq('is_active', true)
-        .order('name', { ascending: true })
-        .limit(50);
-
-      if (browseError) throw browseError;
-      setResults(data || []);
+      // Dùng chung cache với tìm kiếm không dấu (tải một lần, dùng lại)
+      const products = await ensureProductsLoaded();
+      setResults(products.slice(0, 50));
       setIsBrowsing(true);
     } catch {
       setError('Không thể tải danh sách sản phẩm. Vui lòng thử lại.');
@@ -169,7 +196,7 @@ export function ProductSearch({
     } finally {
       setIsLoading(false);
     }
-  }, [isBrowsing]);
+  }, [isBrowsing, ensureProductsLoaded]);
 
   /**
    * Tra cứu sản phẩm theo mã vạch.
