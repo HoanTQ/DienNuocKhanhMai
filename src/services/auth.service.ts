@@ -174,7 +174,7 @@ export async function login(credentials: LoginCredentials): Promise<LoginResult>
 
       return {
         success: false,
-        error: `Số điện thoại hoặc mật khẩu không đúng. Còn ${MAX_FAILED_ATTEMPTS - result.failedAttempts} lần thử.`,
+        error: `Tài khoản hoặc mật khẩu không đúng. Còn ${MAX_FAILED_ATTEMPTS - result.failedAttempts} lần thử.`,
         errorCode: 'INVALID_CREDENTIALS',
         remainingAttempts: MAX_FAILED_ATTEMPTS - result.failedAttempts,
       }
